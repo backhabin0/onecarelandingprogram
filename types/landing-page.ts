@@ -51,4 +51,13 @@ export interface Template {
   id: string;
   name: string;
   description: string;
+  features: string[];
+  available: boolean;
 }
+
+/**
+ * 현재 지원하는 템플릿 id의 union 타입.
+ * DB의 template 컬럼 자체는 자유 문자열이므로(향후 template-c 등 확장 대비),
+ * 이 타입은 템플릿 렌더러 매핑처럼 "알려진 템플릿"을 다루는 곳에서만 사용한다.
+ */
+export type LandingPageTemplateId = "template-a" | "template-b";
