@@ -5,11 +5,15 @@ import { useRouter } from "next/navigation";
 import FormField from "@/components/admin/FormField";
 import Card from "@/components/admin/Card";
 import TemplateSelector from "@/components/admin/TemplateSelector";
+import ImageUploadField from "@/components/admin/ImageUploadField";
 import { mockTemplates } from "@/lib/mock-data";
 import {
   createLandingPageAction,
   updateLandingPageAction,
+  updateLandingPageImageAction,
 } from "@/app/admin/pages/actions";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { uploadLandingPageImage } from "@/lib/storage/landing-page-assets";
 import type {
   CreateLandingPageInput,
   LandingPageStatus,
@@ -31,26 +35,27 @@ const DEFAULT_VALUES: CreateLandingPageInput = {
 const inputClassName =
   "w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 
-const fileInputClassName =
-  "block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200";
-
 interface LandingPageFormProps {
   mode?: "create" | "edit";
   landingPageId?: string;
   initialValues?: CreateLandingPageInput;
+  initialLogoUrl?: string | null;
+  initialMainImageUrl?: string | null;
 }
 
 export default function LandingPageForm({
   mode = "create",
   landingPageId,
   initialValues,
+  initialLogoUrl = null,
+  initialMainImageUrl = null,
 }: LandingPageFormProps) {
   const router = useRouter();
   const [values, setValues] = useState<CreateLandingPageInput>(
     initialValues ?? DEFAULT_VALUES
   );
-  const [logoImageName, setLogoImageName] = useState<string | null>(null);
-  const [mainImageName, setMainImageName] = useState<string | null>(null);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [mainImageFile, setMainImageFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -68,14 +73,90 @@ export default function LandingPageForm({
     setErrorMessage(null);
     setIsSubmitting(true);
 
-    const result =
-      mode === "edit" && landingPageId
-        ? await updateLandingPageAction(landingPageId, values)
-        : await createLandingPageAction(values);
+    if (mode === "edit" && landingPageId) {
+      const result = await updateLandingPageAction(landingPageId, values);
 
-    if (!result.success) {
-      setErrorMessage(result.error ?? "저장 중 오류가 발생했습니다.");
+      if (!result.success) {
+        setErrorMessage(result.error ?? "저장 중 오류가 발생했습니다.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      router.push("/admin/pages");
+      return;
+    }
+
+    const createResult = await createLandingPageAction(values);
+
+    if (!createResult.success || !createResult.id) {
+      setErrorMessage(createResult.error ?? "저장 중 오류가 발생했습니다.");
       setIsSubmitting(false);
+      return;
+    }
+
+    const newId = createResult.id;
+    const imageWarnings: string[] = [];
+    const supabase = getSupabaseBrowserClient();
+
+    if (logoFile) {
+      const uploadResult = await uploadLandingPageImage(
+        supabase,
+        newId,
+        "logo",
+        logoFile
+      );
+
+      if (!uploadResult.url) {
+        imageWarnings.push(
+          uploadResult.error ?? "로고 이미지 업로드에 실패했습니다."
+        );
+      } else {
+        const saveResult = await updateLandingPageImageAction(
+          newId,
+          "logo_url",
+          uploadResult.url
+        );
+        if (!saveResult.success) {
+          imageWarnings.push(
+            saveResult.error ?? "로고 이미지 저장에 실패했습니다."
+          );
+        }
+      }
+    }
+
+    if (mainImageFile) {
+      const uploadResult = await uploadLandingPageImage(
+        supabase,
+        newId,
+        "main",
+        mainImageFile
+      );
+
+      if (!uploadResult.url) {
+        imageWarnings.push(
+          uploadResult.error ?? "메인 이미지 업로드에 실패했습니다."
+        );
+      } else {
+        const saveResult = await updateLandingPageImageAction(
+          newId,
+          "main_image_url",
+          uploadResult.url
+        );
+        if (!saveResult.success) {
+          imageWarnings.push(
+            saveResult.error ?? "메인 이미지 저장에 실패했습니다."
+          );
+        }
+      }
+    }
+
+    if (imageWarnings.length > 0) {
+      window.alert(
+        `랜딩페이지는 생성되었지만 일부 이미지 처리에 실패했습니다.\n\n${imageWarnings.join(
+          "\n"
+        )}\n\n수정 화면에서 다시 업로드할 수 있습니다.`
+      );
+      router.push(`/admin/pages/${newId}/edit`);
       return;
     }
 
@@ -192,34 +273,27 @@ export default function LandingPageForm({
       <Card className="p-6">
         <h2 className="text-base font-semibold text-slate-900">이미지</h2>
         <p className="mt-1 text-sm text-slate-500">
-          실제 서버 업로드는 다음 단계에서 연결됩니다. 지금은 파일 선택 UI만
-          제공되며, 선택한 파일은 저장되지 않습니다.
+          {mode === "edit"
+            ? "이미지를 선택하면 즉시 업로드되어 저장됩니다."
+            : "선택한 이미지는 랜딩페이지 생성 후 업로드됩니다."}
         </p>
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <FormField label="로고 이미지" htmlFor="logoImage">
-            <input
-              id="logoImage"
-              type="file"
-              accept="image/*"
-              className={fileInputClassName}
-              onChange={(e) => setLogoImageName(e.target.files?.[0]?.name ?? null)}
-            />
-            {logoImageName ? (
-              <p className="text-xs text-slate-500">선택됨: {logoImageName}</p>
-            ) : null}
-          </FormField>
-          <FormField label="메인 이미지" htmlFor="mainImage">
-            <input
-              id="mainImage"
-              type="file"
-              accept="image/*"
-              className={fileInputClassName}
-              onChange={(e) => setMainImageName(e.target.files?.[0]?.name ?? null)}
-            />
-            {mainImageName ? (
-              <p className="text-xs text-slate-500">선택됨: {mainImageName}</p>
-            ) : null}
-          </FormField>
+        <div className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <ImageUploadField
+            kind="logo"
+            label="로고 이미지"
+            hint="JPG, PNG, WEBP · 최대 3MB"
+            landingPageId={mode === "edit" ? landingPageId : undefined}
+            currentUrl={initialLogoUrl}
+            onFileSelected={setLogoFile}
+          />
+          <ImageUploadField
+            kind="main"
+            label="메인 이미지"
+            hint="JPG, PNG, WEBP · 최대 10MB"
+            landingPageId={mode === "edit" ? landingPageId : undefined}
+            currentUrl={initialMainImageUrl}
+            onFileSelected={setMainImageFile}
+          />
         </div>
       </Card>
 

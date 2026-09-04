@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { removeLandingPageImageByUrl } from "@/lib/storage/landing-page-assets";
 import type {
   CreateLandingPageInput,
   LandingPage,
@@ -42,6 +43,7 @@ export async function getLandingPages(): Promise<GetLandingPagesResult> {
 export interface InsertLandingPageResult {
   success: boolean;
   error?: string;
+  id?: string;
 }
 
 export async function insertLandingPage(
@@ -49,18 +51,22 @@ export async function insertLandingPage(
 ): Promise<InsertLandingPageResult> {
   try {
     const supabase = await getSupabaseServerClient();
-    const { error } = await supabase.from("landing_pages").insert({
-      business_name: input.businessName,
-      title: input.title,
-      slug: input.slug,
-      hero_text: input.heroText || null,
-      description: input.description || null,
-      phone: input.phone || null,
-      kakao_url: input.kakaoUrl || null,
-      address: input.address || null,
-      template: input.template,
-      status: input.status,
-    });
+    const { data, error } = await supabase
+      .from("landing_pages")
+      .insert({
+        business_name: input.businessName,
+        title: input.title,
+        slug: input.slug,
+        hero_text: input.heroText || null,
+        description: input.description || null,
+        phone: input.phone || null,
+        kakao_url: input.kakaoUrl || null,
+        address: input.address || null,
+        template: input.template,
+        status: input.status,
+      })
+      .select("id")
+      .single();
 
     if (error) {
       if (error.code === "23505") {
@@ -73,7 +79,7 @@ export async function insertLandingPage(
       };
     }
 
-    return { success: true };
+    return { success: true, id: data.id };
   } catch (err) {
     console.error("[landing_pages] client error:", err);
     return {
@@ -181,11 +187,29 @@ export async function deleteLandingPage(
 ): Promise<DeleteLandingPageResult> {
   try {
     const supabase = await getSupabaseServerClient();
+
+    // Storage 정리를 위해 삭제 전에 이 페이지가 사용 중인 이미지 URL을 확보한다.
+    // (다른 페이지의 이미지는 절대 건드리지 않도록 이 row에 한정해서만 조회한다)
+    const { data: existing } = await supabase
+      .from("landing_pages")
+      .select("logo_url, main_image_url")
+      .eq("id", id)
+      .maybeSingle();
+
     const { error } = await supabase.from("landing_pages").delete().eq("id", id);
 
     if (error) {
       console.error("[landing_pages] delete error:", error);
       return { success: false, error: "랜딩페이지를 삭제하지 못했습니다." };
+    }
+
+    if (existing) {
+      // DB row는 이미 삭제되었으므로, Storage 정리 실패가 되살릴 수는 없다.
+      // best-effort로만 처리한다.
+      await Promise.all([
+        removeLandingPageImageByUrl(supabase, existing.logo_url),
+        removeLandingPageImageByUrl(supabase, existing.main_image_url),
+      ]);
     }
 
     return { success: true };
@@ -276,6 +300,54 @@ export async function updateLandingPageStatus(
         err instanceof Error
           ? err.message
           : "상태를 변경하지 못했습니다.",
+    };
+  }
+}
+
+export type LandingPageImageField = "logo_url" | "main_image_url";
+
+export interface UpdateLandingPageImageUrlResult {
+  success: boolean;
+  error?: string;
+  slug?: string;
+}
+
+/**
+ * logo_url 또는 main_image_url 컬럼만 갱신한다.
+ * Storage 업로드/삭제 자체는 호출부(Server Action)에서 처리하고,
+ * 이 함수는 DB에 public URL(또는 null)만 반영한다.
+ */
+export async function updateLandingPageImageUrl(
+  id: string,
+  field: LandingPageImageField,
+  url: string | null
+): Promise<UpdateLandingPageImageUrlResult> {
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("landing_pages")
+      .update({ [field]: url })
+      .eq("id", id)
+      .select("slug")
+      .single();
+
+    if (error) {
+      console.error("[landing_pages] update image url error:", error);
+      return {
+        success: false,
+        error: "이미지 정보를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.",
+      };
+    }
+
+    return { success: true, slug: data?.slug };
+  } catch (err) {
+    console.error("[landing_pages] client error:", err);
+    return {
+      success: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "이미지 정보를 저장하지 못했습니다.",
     };
   }
 }

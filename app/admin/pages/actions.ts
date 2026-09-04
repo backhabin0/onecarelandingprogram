@@ -5,7 +5,9 @@ import {
   deleteLandingPage,
   insertLandingPage,
   updateLandingPage,
+  updateLandingPageImageUrl,
   updateLandingPageStatus,
+  type LandingPageImageField,
 } from "@/lib/landing-pages";
 import type {
   CreateLandingPageInput,
@@ -58,6 +60,7 @@ function normalizeAndValidate(
 export interface CreateLandingPageResult {
   success: boolean;
   error?: string;
+  id?: string;
 }
 
 export async function createLandingPageAction(
@@ -161,4 +164,43 @@ export async function toggleLandingPageStatusAction(
   }
 
   return result;
+}
+
+export interface UpdateLandingPageImageResult {
+  success: boolean;
+  error?: string;
+}
+
+const VALID_IMAGE_FIELDS: LandingPageImageField[] = ["logo_url", "main_image_url"];
+
+/**
+ * logo_url / main_image_url을 갱신한다.
+ * 실제 파일 업로드/삭제는 브라우저에서 Supabase Storage로 직접 처리되고,
+ * 이 action은 결과 public URL(또는 null)을 DB에 반영하는 역할만 한다.
+ */
+export async function updateLandingPageImageAction(
+  id: string,
+  field: LandingPageImageField,
+  url: string | null
+): Promise<UpdateLandingPageImageResult> {
+  if (!id) {
+    return { success: false, error: "잘못된 요청입니다." };
+  }
+
+  if (!VALID_IMAGE_FIELDS.includes(field)) {
+    return { success: false, error: "잘못된 요청입니다." };
+  }
+
+  const result = await updateLandingPageImageUrl(id, field, url);
+
+  if (result.success) {
+    revalidatePath("/admin/pages");
+    revalidatePath("/admin");
+    revalidatePath(`/admin/pages/${id}/edit`);
+    if (result.slug) {
+      revalidatePath(`/${result.slug}`);
+    }
+  }
+
+  return { success: result.success, error: result.error };
 }

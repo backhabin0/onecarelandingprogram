@@ -48,6 +48,8 @@ export default async function EditLandingPagePage({
           template: landingPage.template,
           status: landingPage.status,
         }}
+        initialLogoUrl={landingPage.logo_url}
+        initialMainImageUrl={landingPage.main_image_url}
       />
     </div>
   );
