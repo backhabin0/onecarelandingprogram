@@ -4,6 +4,7 @@ import HeroSection from "@/components/landing/HeroSection";
 import IntroSection from "@/components/landing/IntroSection";
 import BusinessInfoSection from "@/components/landing/BusinessInfoSection";
 import CTASection from "@/components/landing/CTASection";
+import ConsultationForm from "@/components/landing/ConsultationForm";
 import LandingFooter from "@/components/landing/LandingFooter";
 
 interface TemplateAProps {
@@ -36,6 +37,19 @@ export default function TemplateA({ landingPage }: TemplateAProps) {
           phone={landingPage.phone}
         />
         <CTASection phone={landingPage.phone} kakaoUrl={landingPage.kakao_url} />
+        <section className="border-t border-slate-100 bg-slate-50">
+          <div className="mx-auto max-w-xl px-5 py-12 sm:py-16">
+            <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
+              상담 신청
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              아래 정보를 남겨주시면 빠르게 연락드리겠습니다.
+            </p>
+            <div className="mt-6">
+              <ConsultationForm slug={landingPage.slug} variant="light" />
+            </div>
+          </div>
+        </section>
       </main>
       <LandingFooter businessName={landingPage.business_name} />
     </div>

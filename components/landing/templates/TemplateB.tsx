@@ -3,6 +3,7 @@ import LandingHeader from "@/components/landing/LandingHeader";
 import BusinessInfoSection from "@/components/landing/BusinessInfoSection";
 import LandingFooter from "@/components/landing/LandingFooter";
 import CTAButtons from "@/components/landing/CTAButtons";
+import ConsultationForm from "@/components/landing/ConsultationForm";
 
 interface TemplateBProps {
   landingPage: LandingPage;
@@ -90,6 +91,20 @@ export default function TemplateB({ landingPage }: TemplateBProps) {
             </div>
           </section>
         ) : null}
+
+        <section className="bg-slate-900">
+          <div className="mx-auto max-w-xl px-5 py-14 sm:py-20">
+            <h2 className="text-center text-2xl font-extrabold text-white sm:text-3xl">
+              지금 무료 상담 신청하기
+            </h2>
+            <p className="mt-2 text-center text-sm text-slate-400">
+              아래 정보를 남겨주시면 빠르게 연락드리겠습니다.
+            </p>
+            <div className="mt-8">
+              <ConsultationForm slug={landingPage.slug} variant="dark" />
+            </div>
+          </div>
+        </section>
       </main>
 
       <LandingFooter businessName={businessName} />

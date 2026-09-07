@@ -1,0 +1,107 @@
+﻿**********************
+Windows PowerShell 기록 시작
+시작 시간: 20260904150605
+사용자 이름: KGB\kgb04
+RunAs 사용자: KGB\kgb04
+구성 이름: 
+Machine: KGB (Microsoft Windows NT 10.0.26200.0)
+호스트 응용 프로그램: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\kgb04\Desktop\BHB\Program\Onecare\disable_raytracing_all_projects.ps1
+프로세스 ID: 6916
+PSVersion: 5.1.26100.9168
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.9168
+BuildVersion: 10.0.26100.9168
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+기록이 시작되었습니다. 출력 파일은 C:\Users\kgb04\Desktop\BHB\Program\Onecare\disable_raytracing_all_projects.log입니다.
+UPDATED	C:\Users\kgb04\Documents\Unreal Projects\CiciToonCharacterShaderPa\CiciToonCharacterShaderPa.uproject
+UPDATED	C:\Users\kgb04\Documents\Unreal Projects\LyraStarterGame\LyraStarterGame.uproject
+UPDATED	C:\Users\kgb04\Documents\Unreal Projects\VirtualStudio\VirtualStudio.uproject
+UPDATED	C:\Users\kgb04\Documents\Unreal Projects\내프로젝트 5.4\내프로젝트.uproject
+UPDATED	C:\Users\kgb04\Documents\Unreal Projects\내프로젝트\내프로젝트.uproject
+UPDATED	D:\1.Unreal Project's\ArchVizInterior\ArchVizInterior.uproject
+UPDATED	D:\1.Unreal Project's\Audition_Bibimble_mocap\Audition_Bibimble.uproject
+UPDATED	D:\1.Unreal Project's\BigOffice\BigOffice.uproject
+UPDATED	D:\1.Unreal Project's\Birds\Birds.uproject
+UPDATED	D:\1.Unreal Project's\blackmagic_test53\blackmagic_test53.uproject
+UPDATED	D:\1.Unreal Project's\blackmagic_test55\blackmagic_test55.uproject
+UPDATED	D:\1.Unreal Project's\ContentExamples\ContentExamples.uproject
+UPDATED	D:\1.Unreal Project's\CreatureHunter\CreatureHunter.uproject
+UPDATED	D:\1.Unreal Project's\devil 5.3\devil.uproject
+UPDATED	D:\1.Unreal Project's\DrivableCarsBasicPack3Das\DrivableCarsBasicPack3Das.uproject
+UPDATED	D:\1.Unreal Project's\dugyeon\dugyeon.uproject
+UPDATED	D:\1.Unreal Project's\dugyeon2\dugyeon.uproject
+UPDATED	D:\1.Unreal Project's\ElectricDreamsEnv\ElectricDreamsEnv.uproject
+UPDATED	D:\1.Unreal Project's\FluidNinjaLIVE\FluidNinjaLive.uproject
+UPDATED	D:\1.Unreal Project's\Great\0322_great\Great_hw.uproject
+UPDATED	D:\1.Unreal Project's\Great\0509_great\Great_KGB.uproject
+UPDATED	D:\1.Unreal Project's\haydy_studio_54_20250311\haydy_studio_54.uproject
+UPDATED	D:\1.Unreal Project's\HillsideSample\HillsideSample.uproject
+UPDATED	D:\1.Unreal Project's\MeerkatDemo\MeerkatDemo.uproject
+UPDATED	D:\1.Unreal Project's\Metakill\Metakill.uproject
+UPDATED	D:\1.Unreal Project's\MLDeformerSample\MLDeformerSample.uproject
+UPDATED	D:\1.Unreal Project's\ModularSciFiOffice\ModularSciFiOffice.uproject
+UPDATED	D:\1.Unreal Project's\MountainGrasslandEnvironm\MountainGrasslandEnvironm.uproject
+UPDATED	D:\1.Unreal Project's\Nanny\Nanny.uproject
+UPDATED	D:\1.Unreal Project's\ndisplay_test_55\ndisplay_test_55.uproject
+UPDATED	D:\1.Unreal Project's\Neonify\Neonify.uproject
+UPDATED	D:\1.Unreal Project's\P427\P427.uproject
+UPDATED	D:\1.Unreal Project's\P541\P541.uproject
+UPDATED	D:\1.Unreal Project's\PhotorealisticLandscapePa\PhotorealisticLandscapePa.uproject
+UPDATED	D:\1.Unreal Project's\sNYC_city\sNYC_city.uproject
+UPDATED	D:\1.Unreal Project's\test\test.uproject
+UPDATED	D:\1.Unreal Project's\UnifiedSplineMovement\UnifiedSplineMovement.uproject
+UPDATED	D:\1.Unreal Project's\ValleyoftheAncient\ValleyoftheAncient.uproject
+UPDATED	D:\1.Unreal Project's\VirtualStudio54\VirtualStudio54.uproject
+UPDATED	E:\training_194044 (2)\training_194044\training\training.uproject
+UPDATED	F:\A\APIProject\APIProject.uproject
+UPDATED	F:\A\B\APITestMap\APITestMap.uproject
+UPDATED	F:\A\B\DiverX\DiverX.uproject
+UPDATED	F:\A\B\HanARyeon\HanARyeon.uproject
+UPDATED	F:\A\B\SeohyangLivemap\APIProject\APIProject.uproject
+UPDATED	F:\A\B\SooperSonicLiveMap\SooperSonicLiveMap.uproject
+UPDATED	F:\A\bhb\IntroProject\IntroProject.uproject
+UPDATED	F:\A\FacialData\FacialData.uproject
+UPDATED	F:\A\Gam_Yuki_260417(1)\Gam_Yuki_260417.uproject
+UPDATED	F:\A\gitTest\gitTest.uproject
+UPDATED	F:\A\Live\AsteraLiveMap\Astera\Astera.uproject
+UPDATED	F:\A\Live\BunPang_BBang_260604\BunPang_BBang_260604.uproject
+UPDATED	F:\A\Live\GangMaLiveMap\GangMaLiveMap.uproject
+UPDATED	F:\A\Live\MNBLivemap\menubar.uproject
+UPDATED	F:\A\Live\NewNyang0521\NewNyang0521.uproject
+UPDATED	F:\A\Live\SeoHyang_Concert\SeoHyang_Concert.uproject
+UPDATED	F:\A\Live\SeoHyangLiveMap\SeoHyangLiveMap.uproject
+UPDATED	F:\A\Live\sepica_sigDance\sepica_sigDance.uproject
+UPDATED	F:\A\LiveBasicMap\LiveBasicMap.uproject
+UPDATED	F:\A\LiveMap\LiveMap.uproject
+UPDATED	F:\A\Meta\Meta.uproject
+UPDATED	F:\A\MetaHuman\MetaHuman.uproject
+UPDATED	F:\A\MiniLiveBasicMap\MiniLiveBasicMap.uproject
+UPDATED	F:\A\MyProject\MyProject.uproject
+UPDATED	F:\A\MyProject2\MyProject2.uproject
+UPDATED	F:\A\MyProject3\MyProject3.uproject
+UPDATED	F:\A\randd\DivweX\DivweX.uproject
+UPDATED	F:\A\Seohyang0212\Seohyang0212.uproject
+UPDATED	F:\A\TakeRecoder\Bombing0404\Bombing0404.uproject
+UPDATED	F:\A\TakeRecoder\Girlsone0425\Girlsone0425.uproject
+UPDATED	F:\A\TakeRecoder\GirlsOne0621\GirlsOne0621.uproject
+UPDATED	F:\A\TakeRecoder\Grim\AE2UE_260427.uproject
+UPDATED	F:\A\TakeRecoder\Grim0506\Grim0506.uproject
+UPDATED	F:\A\TakeRecoder\Haeri_0430\Haeri_0430.uproject
+UPDATED	F:\A\TakeRecoder\HanARyeon0429\HanARyeon0429.uproject
+UPDATED	F:\A\TakeRecoder\Shinano0504\Shinano0504.uproject
+UPDATED	F:\A\TakeRecoder\그림스튜디오\2\AE2UE_260529.uproject
+UPDATED	F:\A\TakeRecoder\그림스튜디오\AE2UE_260427.uproject
+UPDATED	F:\A\test\test.uproject
+UPDATED	F:\A\test2\test2.uproject
+PROJECT_COUNT=80
+UPDATED_COUNT=80
+UNCHANGED_COUNT=0
+FAILED_COUNT=0
+**********************
+Windows PowerShell 기록 끝
+종료 시간: 20260904150612
+**********************
