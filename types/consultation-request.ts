@@ -34,3 +34,27 @@ export interface InsertConsultationRequestInput {
   phone: string;
   message: string | null;
 }
+
+/** 목록/상세에서 함께 표시할 랜딩페이지 요약 정보. landing_page_id가 null이면 null. */
+export interface ConsultationRequestLandingPageInfo {
+  business_name: string;
+  slug: string;
+}
+
+/** landing_pages와 JOIN한 상담 신청 row. 관리자 목록/상세 조회에서 사용한다. */
+export interface ConsultationRequestWithLandingPage extends ConsultationRequest {
+  landing_page: ConsultationRequestLandingPageInfo | null;
+}
+
+export type ConsultationRequestSort = "newest" | "oldest";
+
+/** 관리자 상담 목록 조회 시 사용하는 검색/필터/정렬/페이지 조건 */
+export interface ConsultationRequestFilters {
+  search?: string;
+  status?: ConsultationRequestStatus | "all";
+  /** "all" | "deleted"(삭제된 랜딩페이지) | 실제 landing_pages.id */
+  landingPageId?: string;
+  sort?: ConsultationRequestSort;
+  /** 1부터 시작. getAllConsultationRequestsForExport에서는 사용하지 않는다. */
+  page?: number;
+}
