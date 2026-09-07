@@ -1,6 +1,11 @@
+"use client";
+
+import { sendAnalyticsEvent } from "@/lib/analytics-client";
+
 interface CTAButtonsProps {
   phone: string | null;
   kakaoUrl: string | null;
+  slug: string;
   size?: "md" | "lg";
 }
 
@@ -12,6 +17,7 @@ const SIZE_CLASSNAMES: Record<"md" | "lg", string> = {
 export default function CTAButtons({
   phone,
   kakaoUrl,
+  slug,
   size = "md",
 }: CTAButtonsProps) {
   if (!phone && !kakaoUrl) {
@@ -25,6 +31,7 @@ export default function CTAButtons({
       {phone ? (
         <a
           href={`tel:${phone.replace(/[^\d+]/g, "")}`}
+          onClick={() => sendAnalyticsEvent(slug, "phone_click")}
           className={`inline-flex items-center justify-center rounded-lg bg-blue-600 font-semibold text-white active:bg-blue-700 ${sizeClassName}`}
         >
           전화 상담하기
@@ -35,6 +42,7 @@ export default function CTAButtons({
           href={kakaoUrl}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={() => sendAnalyticsEvent(slug, "kakao_click")}
           className={`inline-flex items-center justify-center rounded-lg bg-yellow-400 font-semibold text-slate-900 active:bg-yellow-500 ${sizeClassName}`}
         >
           카카오톡 상담

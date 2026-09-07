@@ -14,6 +14,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "랜딩페이지 관리", href: "/admin/pages" },
   { label: "새 페이지 만들기", href: "/admin/pages/new" },
   { label: "상담 관리", href: "/admin/consultations" },
+  { label: "통계", href: "/admin/analytics" },
   { label: "템플릿 관리", href: "/admin/templates" },
   { label: "설정", href: "/admin/settings" },
 ];

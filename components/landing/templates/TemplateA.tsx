@@ -29,6 +29,7 @@ export default function TemplateA({ landingPage }: TemplateAProps) {
           mainImageUrl={landingPage.main_image_url}
           phone={landingPage.phone}
           kakaoUrl={landingPage.kakao_url}
+          slug={landingPage.slug}
         />
         <IntroSection description={landingPage.description} />
         <BusinessInfoSection
@@ -36,7 +37,11 @@ export default function TemplateA({ landingPage }: TemplateAProps) {
           address={landingPage.address}
           phone={landingPage.phone}
         />
-        <CTASection phone={landingPage.phone} kakaoUrl={landingPage.kakao_url} />
+        <CTASection
+          phone={landingPage.phone}
+          kakaoUrl={landingPage.kakao_url}
+          slug={landingPage.slug}
+        />
         <section className="border-t border-slate-100 bg-slate-50">
           <div className="mx-auto max-w-xl px-5 py-12 sm:py-16">
             <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">

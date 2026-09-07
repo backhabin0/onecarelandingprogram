@@ -6,6 +6,7 @@ interface HeroSectionProps {
   mainImageUrl: string | null;
   phone: string | null;
   kakaoUrl: string | null;
+  slug: string;
 }
 
 export default function HeroSection({
@@ -14,6 +15,7 @@ export default function HeroSection({
   mainImageUrl,
   phone,
   kakaoUrl,
+  slug,
 }: HeroSectionProps) {
   return (
     <section className="bg-slate-50">
@@ -34,7 +36,7 @@ export default function HeroSection({
             <p className="text-lg text-slate-600 sm:text-xl">{heroText}</p>
           ) : null}
         </div>
-        <CTAButtons phone={phone} kakaoUrl={kakaoUrl} />
+        <CTAButtons phone={phone} kakaoUrl={kakaoUrl} slug={slug} />
       </div>
     </section>
   );

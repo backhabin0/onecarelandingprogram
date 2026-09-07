@@ -48,7 +48,12 @@ export default function TemplateB({ landingPage }: TemplateBProps) {
             <h1 className="text-4xl font-extrabold leading-tight text-white sm:text-5xl lg:text-6xl">
               {title}
             </h1>
-            <CTAButtons phone={phone} kakaoUrl={kakaoUrl} size="lg" />
+            <CTAButtons
+              phone={phone}
+              kakaoUrl={kakaoUrl}
+              slug={landingPage.slug}
+              size="lg"
+            />
           </div>
         </section>
 
@@ -87,7 +92,12 @@ export default function TemplateB({ landingPage }: TemplateBProps) {
               <h2 className="text-2xl font-extrabold text-white sm:text-3xl">
                 놓치면 후회하는 특별 혜택, 지금 상담하세요
               </h2>
-              <CTAButtons phone={phone} kakaoUrl={kakaoUrl} size="lg" />
+              <CTAButtons
+                phone={phone}
+                kakaoUrl={kakaoUrl}
+                slug={landingPage.slug}
+                size="lg"
+              />
             </div>
           </section>
         ) : null}

@@ -3,9 +3,10 @@ import CTAButtons from "@/components/landing/CTAButtons";
 interface CTASectionProps {
   phone: string | null;
   kakaoUrl: string | null;
+  slug: string;
 }
 
-export default function CTASection({ phone, kakaoUrl }: CTASectionProps) {
+export default function CTASection({ phone, kakaoUrl, slug }: CTASectionProps) {
   if (!phone && !kakaoUrl) {
     return null;
   }
@@ -16,7 +17,7 @@ export default function CTASection({ phone, kakaoUrl }: CTASectionProps) {
         <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
           지금 바로 상담을 시작해보세요
         </h2>
-        <CTAButtons phone={phone} kakaoUrl={kakaoUrl} />
+        <CTAButtons phone={phone} kakaoUrl={kakaoUrl} slug={slug} />
       </div>
     </section>
   );
