@@ -30,6 +30,7 @@ export default function TemplateA({ landingPage }: TemplateAProps) {
           phone={landingPage.phone}
           kakaoUrl={landingPage.kakao_url}
           slug={landingPage.slug}
+          businessName={landingPage.business_name}
         />
         <IntroSection description={landingPage.description} />
         <BusinessInfoSection

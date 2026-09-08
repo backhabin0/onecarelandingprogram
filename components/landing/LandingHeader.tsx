@@ -14,7 +14,7 @@ export default function LandingHeader({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={logoUrl}
-            alt={businessName}
+            alt={`${businessName} 로고`}
             className="h-8 w-8 shrink-0 rounded object-contain"
           />
         ) : null}

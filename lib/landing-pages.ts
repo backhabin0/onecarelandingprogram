@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { removeLandingPageImageByUrl } from "@/lib/storage/landing-page-assets";
 import type {
@@ -267,6 +268,13 @@ export async function getPublicLandingPageBySlug(
   }
 }
 
+/**
+ * app/[slug]/page.tsx의 generateMetadata와 페이지 컴포넌트가 같은 요청 안에서
+ * 동일한 slug를 각각 조회하더라도 DB 조회가 중복 실행되지 않도록 React
+ * cache로 감싼 버전. 두 곳 모두 이 함수를 사용해야 한다.
+ */
+export const getCachedPublicLandingPageBySlug = cache(getPublicLandingPageBySlug);
+
 export interface UpdateLandingPageStatusResult {
   success: boolean;
   error?: string;
@@ -349,5 +357,43 @@ export async function updateLandingPageImageUrl(
           ? err.message
           : "이미지 정보를 저장하지 못했습니다.",
     };
+  }
+}
+
+export interface SitemapLandingPageRow {
+  slug: string;
+  updated_at: string;
+  created_at: string;
+}
+
+export interface GetPublicLandingPagesForSitemapResult {
+  data: SitemapLandingPageRow[];
+  error: string | null;
+}
+
+/**
+ * app/sitemap.ts 전용 조회. anon 대상 RLS(status = 'public')에도 의존하지만
+ * getPublicLandingPageBySlug와 동일한 이유로 애플리케이션 쿼리에도
+ * status = 'public' 조건을 명시한다 — 관리자가 로그인한 채로 /sitemap.xml을
+ * 직접 열어보는 경우에도 private 페이지가 sitemap에 노출되지 않게 하기 위함이다.
+ */
+export async function getPublicLandingPagesForSitemap(): Promise<GetPublicLandingPagesForSitemapResult> {
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("landing_pages")
+      .select("slug, updated_at, created_at")
+      .eq("status", "public")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[landing_pages] select public for sitemap error:", error);
+      return { data: [], error: "랜딩페이지 목록을 불러오지 못했습니다." };
+    }
+
+    return { data: (data as SitemapLandingPageRow[]) ?? [], error: null };
+  } catch (err) {
+    console.error("[landing_pages] client error:", err);
+    return { data: [], error: "랜딩페이지 목록을 불러오지 못했습니다." };
   }
 }

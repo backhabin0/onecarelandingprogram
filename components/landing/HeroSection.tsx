@@ -7,6 +7,7 @@ interface HeroSectionProps {
   phone: string | null;
   kakaoUrl: string | null;
   slug: string;
+  businessName: string;
 }
 
 export default function HeroSection({
@@ -16,6 +17,7 @@ export default function HeroSection({
   phone,
   kakaoUrl,
   slug,
+  businessName,
 }: HeroSectionProps) {
   return (
     <section className="bg-slate-50">
@@ -24,7 +26,7 @@ export default function HeroSection({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={mainImageUrl}
-            alt={title}
+            alt={`${businessName} 대표 이미지`}
             className="w-full rounded-xl object-cover"
           />
         ) : null}

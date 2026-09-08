@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getPublicLandingPageBySlug } from "@/lib/landing-pages";
+import { getCachedPublicLandingPageBySlug } from "@/lib/landing-pages";
+import { buildLandingPageMetadata } from "@/lib/seo";
 import LandingPageRenderer from "@/components/landing/LandingPageRenderer";
 
 // 고객용 페이지는 관리자가 상태/내용/템플릿을 바꾸는 즉시 반영되어야 하므로
@@ -10,11 +12,29 @@ interface PublicLandingPageProps {
   params: Promise<{ slug: string }>;
 }
 
+/**
+ * 존재하지 않거나 private인 slug는 여기서 서버 오류 없이 최소한의 fallback
+ * metadata(색인 제외)만 반환하고, 실제 404 처리는 페이지 컴포넌트의
+ * notFound()가 그대로 담당한다.
+ */
+export async function generateMetadata({
+  params,
+}: PublicLandingPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const { data: landingPage } = await getCachedPublicLandingPageBySlug(slug);
+
+  if (!landingPage) {
+    return { robots: { index: false, follow: false } };
+  }
+
+  return buildLandingPageMetadata(landingPage);
+}
+
 export default async function PublicLandingPage({
   params,
 }: PublicLandingPageProps) {
   const { slug } = await params;
-  const { data: landingPage } = await getPublicLandingPageBySlug(slug);
+  const { data: landingPage } = await getCachedPublicLandingPageBySlug(slug);
 
   if (!landingPage) {
     notFound();
