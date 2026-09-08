@@ -1,12 +1,15 @@
 import type { LandingPage } from "@/types/landing-page";
+import type { ResolvedFaq } from "@/types/seo";
 import LandingHeader from "@/components/landing/LandingHeader";
 import BusinessInfoSection from "@/components/landing/BusinessInfoSection";
 import LandingFooter from "@/components/landing/LandingFooter";
 import CTAButtons from "@/components/landing/CTAButtons";
 import ConsultationForm from "@/components/landing/ConsultationForm";
+import FAQSection from "@/components/landing/FAQSection";
 
 interface TemplateBProps {
   landingPage: LandingPage;
+  faqs: ResolvedFaq[];
 }
 
 /**
@@ -14,7 +17,7 @@ interface TemplateBProps {
  * Template A와 달리 hero_text를 Hero에 묶지 않고 별도의 "핵심 혜택 강조" 배너로
  * 분리해 두 템플릿의 섹션 구성 자체가 다르게 보이도록 한다.
  */
-export default function TemplateB({ landingPage }: TemplateBProps) {
+export default function TemplateB({ landingPage, faqs }: TemplateBProps) {
   const {
     business_name: businessName,
     title,
@@ -115,6 +118,8 @@ export default function TemplateB({ landingPage }: TemplateBProps) {
             </div>
           </div>
         </section>
+
+        <FAQSection faqs={faqs} variant="dark" />
       </main>
 
       <LandingFooter businessName={businessName} />

@@ -7,6 +7,7 @@ import type { LandingPage, LandingPageStatus } from "@/types/landing-page";
 import StatusBadge from "@/components/admin/StatusBadge";
 import { getTemplateLabel } from "@/lib/mock-data";
 import { formatDate } from "@/lib/format";
+import { getAbsoluteUrl } from "@/lib/site";
 import {
   deleteLandingPageAction,
   toggleLandingPageStatusAction,
@@ -33,8 +34,21 @@ export default function PageTable({ pages }: PageTableProps) {
     id: string;
     message: string;
   } | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const isRowPending = (id: string) => isPending && pendingId === id;
+
+  const handleCopyUrl = async (page: LandingPage) => {
+    try {
+      await navigator.clipboard.writeText(getAbsoluteUrl(`/${page.slug}`));
+      setCopiedId(page.id);
+      setTimeout(() => {
+        setCopiedId((current) => (current === page.id ? null : current));
+      }, 2000);
+    } catch (err) {
+      console.error("[admin] URL 복사 실패:", err);
+    }
+  };
 
   const handleToggleStatus = (page: LandingPage) => {
     if (isPending) return;
@@ -118,18 +132,40 @@ export default function PageTable({ pages }: PageTableProps) {
                 {page.business_name}
               </td>
               <td className="px-4 py-3 text-slate-500">
-                {page.status === "public" ? (
-                  <a
-                    href={`/${page.slug}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
-                    /{page.slug}
-                  </a>
-                ) : (
-                  <span>/{page.slug}</span>
-                )}
+                <div className="flex items-center gap-2">
+                  {page.status === "public" ? (
+                    <a
+                      href={`/${page.slug}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="max-w-[220px] truncate text-blue-600 hover:underline"
+                      title={getAbsoluteUrl(`/${page.slug}`)}
+                    >
+                      {getAbsoluteUrl(`/${page.slug}`)}
+                    </a>
+                  ) : (
+                    <span
+                      className="max-w-[220px] truncate"
+                      title={getAbsoluteUrl(`/${page.slug}`)}
+                    >
+                      {getAbsoluteUrl(`/${page.slug}`)}
+                    </span>
+                  )}
+                  {page.status === "public" ? (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyUrl(page)}
+                      className="shrink-0 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                    >
+                      {copiedId === page.id ? "복사됨" : "URL 복사"}
+                    </button>
+                  ) : null}
+                </div>
+                {copiedId === page.id ? (
+                  <p className="mt-1 text-xs text-emerald-600">
+                    URL이 복사되었습니다.
+                  </p>
+                ) : null}
               </td>
               <td className="px-4 py-3">{getTemplateLabel(page.template)}</td>
               <td className="px-4 py-3">

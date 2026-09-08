@@ -1,6 +1,6 @@
 "use server";
 
-import { getPublicLandingPageBySlug } from "@/lib/landing-pages";
+import { getPublicLandingPageIdBySlug } from "@/lib/landing-pages";
 import { insertConsultationRequest } from "@/lib/consultation-requests";
 import type { CreateConsultationRequestInput } from "@/types/consultation-request";
 
@@ -81,7 +81,7 @@ export async function createConsultationRequestAction(
   }
 
   const slug = input.slug.trim();
-  const { data: landingPage } = await getPublicLandingPageBySlug(slug);
+  const { data: landingPage } = await getPublicLandingPageIdBySlug(slug);
 
   if (!landingPage) {
     return { success: false, error: GENERIC_ERROR };

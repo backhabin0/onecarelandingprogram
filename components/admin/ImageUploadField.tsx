@@ -17,6 +17,7 @@ const fileInputClassName =
 const KIND_LABEL: Record<LandingImageKind, string> = {
   logo: "로고",
   main: "메인 이미지",
+  og: "OG 이미지",
 };
 
 interface ImageUploadFieldProps {

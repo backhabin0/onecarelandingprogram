@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { getPublicLandingPageBySlug } from "@/lib/landing-pages";
+import { getPublicLandingPageIdBySlug } from "@/lib/landing-pages";
 import { recordLandingPageEvent } from "@/lib/analytics";
 import type { LandingPageEventType } from "@/types/analytics";
 
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     return new Response(null, { status: 400 });
   }
 
-  const { data: landingPage } = await getPublicLandingPageBySlug(slug);
+  const { data: landingPage } = await getPublicLandingPageIdBySlug(slug);
 
   if (!landingPage) {
     return new Response(null, { status: 204 });

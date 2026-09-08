@@ -8,7 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const LANDING_PAGE_ASSETS_BUCKET = "landing-page-assets";
 
-export type LandingImageKind = "logo" | "main";
+export type LandingImageKind = "logo" | "main" | "og";
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 type AllowedMimeType = (typeof ALLOWED_MIME_TYPES)[number];
@@ -22,11 +22,13 @@ const MIME_EXTENSIONS: Record<AllowedMimeType, string> = {
 const MAX_SIZE_BYTES: Record<LandingImageKind, number> = {
   logo: 3 * 1024 * 1024,
   main: 10 * 1024 * 1024,
+  og: 5 * 1024 * 1024,
 };
 
 const MAX_SIZE_MESSAGE: Record<LandingImageKind, string> = {
   logo: "로고 이미지는 3MB 이하로 업로드해주세요.",
   main: "메인 이미지는 10MB 이하로 업로드해주세요.",
+  og: "OG 이미지는 5MB 이하로 업로드해주세요.",
 };
 
 export interface ValidateImageResult {
@@ -63,7 +65,7 @@ export function generateSafeFilename(
   const extension = isAllowedMimeType(file.type)
     ? MIME_EXTENSIONS[file.type]
     : "jpg";
-  const prefix = kind === "logo" ? "logo" : "main";
+  const prefix = kind === "logo" ? "logo" : kind === "main" ? "main" : "og";
   return `${prefix}-${crypto.randomUUID()}.${extension}`;
 }
 
