@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import {
   deleteLandingPage,
+  duplicateLandingPage,
   insertLandingPage,
   updateLandingPage,
   updateLandingPageImageUrl,
@@ -160,6 +161,62 @@ export async function deleteLandingPageAction(
   }
 
   const result = await deleteLandingPage(id);
+
+  if (result.success) {
+    revalidatePath("/admin/pages");
+    revalidatePath("/admin");
+  }
+
+  return result;
+}
+
+export interface DuplicateLandingPageInput {
+  businessName: string;
+  title: string;
+  slug: string;
+  status: LandingPageStatus;
+}
+
+export interface DuplicateLandingPageActionResult {
+  success: boolean;
+  error?: string;
+  id?: string;
+}
+
+/**
+ * 원본 랜딩페이지를 새 row로 복제한다. 입력값 검증은 create/edit과 동일한
+ * normalizeAndValidate 규칙(slug 패턴, 필수값, status)을 재사용한다.
+ * 실제 복제(기본 데이터/SEO/FAQ 복사, consultation/Analytics 제외, rollback)는
+ * lib/landing-pages.ts의 duplicateLandingPage가 담당한다.
+ */
+export async function duplicateLandingPageAction(
+  sourceId: string,
+  input: DuplicateLandingPageInput
+): Promise<DuplicateLandingPageActionResult> {
+  if (!sourceId) {
+    return { success: false, error: "잘못된 요청입니다." };
+  }
+
+  const { normalized, error } = normalizeAndValidate({
+    ...input,
+    heroText: "",
+    description: "",
+    phone: "",
+    kakaoUrl: "",
+    address: "",
+    template: "template-a",
+  });
+
+  if (error) {
+    return { success: false, error };
+  }
+
+  const result = await duplicateLandingPage(sourceId, {
+    businessName: normalized.businessName,
+    title: normalized.title,
+    slug: normalized.slug,
+    status: input.status,
+  });
 
   if (result.success) {
     revalidatePath("/admin/pages");

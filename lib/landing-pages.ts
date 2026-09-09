@@ -3,6 +3,8 @@ import "server-only";
 import { cache } from "react";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { removeLandingPageImageByUrl } from "@/lib/storage/landing-page-assets";
+import { getSeoSettingsByLandingPageId } from "@/lib/seo-settings";
+import { getFaqsByLandingPageId } from "@/lib/faqs";
 import type {
   CreateLandingPageInput,
   LandingPage,
@@ -493,5 +495,193 @@ export async function getPublicLandingPagesForSitemap(): Promise<GetPublicLandin
   } catch (err) {
     console.error("[landing_pages] client error:", err);
     return { data: [], error: "랜딩페이지 목록을 불러오지 못했습니다." };
+  }
+}
+
+// ============================================================
+// 랜딩페이지 복제 (15단계)
+// ============================================================
+
+/**
+ * 원본 slug 기준으로 충돌 없는 복제 기본 slug를 제안한다.
+ * "agym" → "agym-copy"가 이미 있으면 "agym-copy-2", "agym-copy-3" ... 순으로
+ * 확인한다. 이 값은 UI 기본값일 뿐이며, 최종 slug는 관리자가 수정할 수 있고
+ * 실제 유일성은 DB unique 제약이 최종적으로 보장한다.
+ */
+export async function suggestDuplicateSlug(sourceSlug: string): Promise<string> {
+  const base = `${sourceSlug}-copy`;
+
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("landing_pages")
+      .select("slug")
+      .like("slug", `${base}%`);
+
+    if (error) {
+      console.error("[landing_pages] slug suggestion select error:", error);
+      return base;
+    }
+
+    const existingSlugs = new Set((data ?? []).map((row) => row.slug as string));
+
+    if (!existingSlugs.has(base)) {
+      return base;
+    }
+
+    let suffix = 2;
+    while (existingSlugs.has(`${base}-${suffix}`)) {
+      suffix += 1;
+    }
+    return `${base}-${suffix}`;
+  } catch (err) {
+    console.error("[landing_pages] client error:", err);
+    return base;
+  }
+}
+
+export interface DuplicateLandingPageOverrides {
+  businessName: string;
+  title: string;
+  slug: string;
+  status: LandingPageStatus;
+}
+
+export interface DuplicateLandingPageResult {
+  success: boolean;
+  error?: string;
+  id?: string;
+}
+
+/**
+ * 기존 랜딩페이지를 새 row로 복제한다.
+ *
+ * 복제 대상: 기본 데이터(전화/카카오/주소/설명 등), template, 이미지 URL(파일
+ * 자체는 복사하지 않고 같은 Storage URL을 그대로 참조), SEO 설정, 수동 FAQ.
+ * 복제 제외: id/created_at/updated_at(새로 생성), consultation_requests,
+ * landing_page_events(Analytics) — 이 함수는 두 테이블을 아예 조회하지 않는다.
+ *
+ * 이 프로젝트에는 RPC/트랜잭션 인프라가 없으므로(기존 코드도 모두 Supabase
+ * JS 클라이언트로 순차 처리), 원자성은 애플리케이션 레벨 rollback으로
+ * 확보한다: core landing_pages row를 먼저 만들고, SEO/FAQ 복제가 실패하면
+ * 방금 만든 core row를 삭제한다. landing_page_seo_settings/landing_page_faqs는
+ * landing_pages(id)에 on delete cascade가 걸려 있어(009 migration), core row
+ * 삭제만으로 부분 삽입된 SEO/FAQ도 함께 정리된다 — "생성됐지만 SEO/FAQ만
+ * 빠진 불완전 상태"가 남지 않는다.
+ */
+export async function duplicateLandingPage(
+  sourceId: string,
+  overrides: DuplicateLandingPageOverrides
+): Promise<DuplicateLandingPageResult> {
+  const { data: source, error: sourceError } = await getLandingPageById(sourceId);
+
+  if (sourceError) {
+    return { success: false, error: "원본 랜딩페이지를 불러오지 못했습니다." };
+  }
+  if (!source) {
+    return { success: false, error: "원본 랜딩페이지를 찾을 수 없습니다." };
+  }
+
+  try {
+    const supabase = await getSupabaseServerClient();
+
+    const { data: inserted, error: insertError } = await supabase
+      .from("landing_pages")
+      .insert({
+        business_name: overrides.businessName,
+        title: overrides.title,
+        slug: overrides.slug,
+        hero_text: source.hero_text,
+        description: source.description,
+        phone: source.phone,
+        kakao_url: source.kakao_url,
+        address: source.address,
+        logo_url: source.logo_url,
+        main_image_url: source.main_image_url,
+        template: source.template,
+        status: overrides.status,
+      })
+      .select("id")
+      .single();
+
+    if (insertError) {
+      if (insertError.code === "23505") {
+        return { success: false, error: "이미 사용 중인 URL입니다." };
+      }
+      console.error("[landing_pages] duplicate insert error:", insertError);
+      return { success: false, error: "랜딩페이지 복제에 실패했습니다." };
+    }
+
+    const newId = inserted.id as string;
+
+    const rollbackNewLandingPage = async () => {
+      const { error: rollbackError } = await supabase
+        .from("landing_pages")
+        .delete()
+        .eq("id", newId);
+
+      if (rollbackError) {
+        console.error(
+          "[landing_pages] duplicate rollback failed — orphan row left:",
+          newId
+        );
+      }
+    };
+
+    const [{ data: sourceSeo }, { data: sourceFaqs }] = await Promise.all([
+      getSeoSettingsByLandingPageId(sourceId),
+      getFaqsByLandingPageId(sourceId),
+    ]);
+
+    if (sourceSeo) {
+      const { error: seoError } = await supabase
+        .from("landing_page_seo_settings")
+        .insert({
+          landing_page_id: newId,
+          seo_title: sourceSeo.seo_title,
+          seo_description: sourceSeo.seo_description,
+          og_title: sourceSeo.og_title,
+          og_description: sourceSeo.og_description,
+          og_image_url: sourceSeo.og_image_url,
+          seo_noindex: sourceSeo.seo_noindex,
+          business_category: sourceSeo.business_category,
+          service_area: sourceSeo.service_area,
+          disable_auto_faq: sourceSeo.disable_auto_faq,
+        });
+
+      if (seoError) {
+        console.error("[landing_pages] duplicate seo insert error:", seoError);
+        await rollbackNewLandingPage();
+        return { success: false, error: "랜딩페이지 복제에 실패했습니다." };
+      }
+    }
+
+    if (sourceFaqs.length > 0) {
+      const { error: faqError } = await supabase
+        .from("landing_page_faqs")
+        .insert(
+          sourceFaqs.map((faq) => ({
+            landing_page_id: newId,
+            question: faq.question,
+            answer: faq.answer,
+            sort_order: faq.sort_order,
+            is_active: faq.is_active,
+          }))
+        );
+
+      if (faqError) {
+        console.error("[landing_pages] duplicate faq insert error:", faqError);
+        await rollbackNewLandingPage();
+        return { success: false, error: "랜딩페이지 복제에 실패했습니다." };
+      }
+    }
+
+    return { success: true, id: newId };
+  } catch (err) {
+    console.error("[landing_pages] client error:", err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "랜딩페이지 복제에 실패했습니다.",
+    };
   }
 }

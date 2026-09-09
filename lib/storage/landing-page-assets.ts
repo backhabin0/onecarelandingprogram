@@ -140,8 +140,12 @@ export async function uploadLandingPageImage(
 }
 
 /**
- * public URL이 가리키는 Storage object를 best-effort로 삭제한다.
- * 실패해도 예외를 던지지 않는다 — orphan file은 로그로만 남긴다.
+ * public URL이 가리키는 Storage object를 다른 landing_pages/SEO row가 더 이상
+ * 참조하지 않을 때만 best-effort로 삭제한다(공유 이미지 안전성 — 15단계 복제
+ * 기능이 원본 이미지 URL을 그대로 재사용하므로, 복제본/원본 중 한쪽에서
+ * 이미지를 교체/삭제해도 다른 쪽이 여전히 쓰는 파일은 지우면 안 된다).
+ * 참조 여부 확인 자체가 실패하면 안전하게 삭제를 건너뛴다.
+ * 이 함수는 실패해도 예외를 던지지 않는다 — orphan file은 로그로만 남긴다.
  */
 export async function removeLandingPageImageByUrl(
   supabase: SupabaseClient,
@@ -151,6 +155,37 @@ export async function removeLandingPageImageByUrl(
 
   const path = getStoragePathFromPublicUrl(url);
   if (!path) return;
+
+  const [logoRef, mainRef, ogRef] = await Promise.all([
+    supabase
+      .from("landing_pages")
+      .select("id", { count: "exact", head: true })
+      .eq("logo_url", url),
+    supabase
+      .from("landing_pages")
+      .select("id", { count: "exact", head: true })
+      .eq("main_image_url", url),
+    supabase
+      .from("landing_page_seo_settings")
+      .select("landing_page_id", { count: "exact", head: true })
+      .eq("og_image_url", url),
+  ]);
+
+  if (logoRef.error || mainRef.error || ogRef.error) {
+    console.error(
+      "[storage] reference check failed, skip remove:",
+      logoRef.error ?? mainRef.error ?? ogRef.error
+    );
+    return;
+  }
+
+  const stillReferenced =
+    (logoRef.count ?? 0) > 0 || (mainRef.count ?? 0) > 0 || (ogRef.count ?? 0) > 0;
+
+  if (stillReferenced) {
+    console.log("[storage] skip remove: asset still referenced by another page");
+    return;
+  }
 
   const { error } = await supabase.storage
     .from(LANDING_PAGE_ASSETS_BUCKET)
