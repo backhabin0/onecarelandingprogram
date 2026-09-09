@@ -228,14 +228,16 @@ export async function deleteLandingPage(
 }
 
 interface GetPublicLandingPageIdBySlugResult {
-  data: { id: string } | null;
+  data: { id: string; business_name: string } | null;
   error: string | null;
 }
 
 /**
- * 상담 신청/Analytics 이벤트 기록처럼 landing_page_id만 필요한 호출부 전용
- * 경량 조회. SEO 설정/FAQ까지 함께 가져오는 getPublicLandingPageBySlug보다
- * 가벼워, 자주 호출되는 이 두 경로에서 불필요한 join을 피한다.
+ * 상담 신청/Analytics 이벤트 기록처럼 landing_page_id(+ 상담 알림 이메일에
+ * 필요한 business_name)만 있으면 되는 호출부 전용 경량 조회. SEO 설정/FAQ까지
+ * 함께 가져오는 getPublicLandingPageBySlug보다 가벼워, 자주 호출되는 이 경로들에서
+ * 불필요한 join을 피한다. business_name은 join 없이 같은 테이블의 컬럼만
+ * 추가하는 것이라 기존 RLS/성능 특성에 영향이 없다.
  */
 export async function getPublicLandingPageIdBySlug(
   slug: string
@@ -244,7 +246,7 @@ export async function getPublicLandingPageIdBySlug(
     const supabase = await getSupabaseServerClient();
     const { data, error } = await supabase
       .from("landing_pages")
-      .select("id")
+      .select("id, business_name")
       .eq("slug", slug)
       .eq("status", "public")
       .maybeSingle();

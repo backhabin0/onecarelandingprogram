@@ -2,6 +2,7 @@
 
 import { getPublicLandingPageIdBySlug } from "@/lib/landing-pages";
 import { insertConsultationRequest } from "@/lib/consultation-requests";
+import { sendConsultationNotification } from "@/lib/notifications/consultation-email";
 import type { CreateConsultationRequestInput } from "@/types/consultation-request";
 
 const NAME_MAX_LENGTH = 50;
@@ -87,15 +88,34 @@ export async function createConsultationRequestAction(
     return { success: false, error: GENERIC_ERROR };
   }
 
+  const name = input.name.trim();
+  const phone = input.phone.trim();
+  const message = input.message.trim() || null;
+
   const result = await insertConsultationRequest({
     landingPageId: landingPage.id,
-    name: input.name.trim(),
-    phone: input.phone.trim(),
-    message: input.message.trim() || null,
+    name,
+    phone,
+    message,
   });
 
   if (!result.success) {
     return { success: false, error: result.error ?? GENERIC_ERROR };
+  }
+
+  // 이메일 알림은 부가 기능이다 — 실패해도 이미 저장된 상담 신청 자체는
+  // 성공으로 처리한다(핵심 원칙: 상담 데이터 보존이 이메일보다 우선).
+  try {
+    await sendConsultationNotification({
+      businessName: landingPage.business_name,
+      slug,
+      name,
+      phone,
+      message,
+      createdAt: new Date(),
+    });
+  } catch (err) {
+    console.error("[consultation-email] notification error:", err);
   }
 
   return { success: true };
