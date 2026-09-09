@@ -28,6 +28,12 @@ function sanitizeSearchTerm(term: string): string {
 export interface InsertConsultationRequestResult {
   success: boolean;
   error?: string;
+  /**
+   * true면 이번 요청이 새 row를 만든 게 아니라, 이미 처리된 동일
+   * submission_id의 재시도였다는 뜻이다(네트워크 재시도/중복 클릭). 이
+   * 경우 호출부는 이메일을 다시 보내지 않아야 한다(17단계 idempotency).
+   */
+  duplicate?: boolean;
 }
 
 /**
@@ -37,6 +43,12 @@ export interface InsertConsultationRequestResult {
  * public 상태인지" 확인을 마쳤다고 가정한다 — 이 함수는 DB INSERT만 담당한다.
  * status는 항상 DB 기본값('new')으로 저장되고, privacy_consent는 호출부에서
  * 이미 true임을 확인한 값만 전달된다는 전제로 저장한다.
+ *
+ * submission_id UNIQUE 인덱스(010 migration) 위반은 실패가 아니라 "이미
+ * 처리된 동일 제출"로 간주해 success: true, duplicate: true를 반환한다 —
+ * 고객에게는 항상 기존과 동일한 성공 UX를 보여주고, 두 번째 DB row나 이메일이
+ * 생기지 않게 한다. 이 테이블에는 submission_id 외 다른 UNIQUE 제약이 없으므로
+ * 23505는 이 경우로만 발생한다.
  */
 export async function insertConsultationRequest(
   input: InsertConsultationRequestInput
@@ -49,9 +61,13 @@ export async function insertConsultationRequest(
       phone: input.phone,
       message: input.message,
       privacy_consent: true,
+      submission_id: input.submissionId,
     });
 
     if (error) {
+      if (error.code === "23505") {
+        return { success: true, duplicate: true };
+      }
       console.error("[consultation_requests] insert error:", error);
       return {
         success: false,
@@ -59,7 +75,7 @@ export async function insertConsultationRequest(
       };
     }
 
-    return { success: true };
+    return { success: true, duplicate: false };
   } catch (err) {
     console.error("[consultation_requests] client error:", err);
     return {

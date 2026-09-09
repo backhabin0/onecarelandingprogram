@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import PageHeader from "@/components/admin/PageHeader";
 import LandingPageForm from "@/components/admin/LandingPageForm";
@@ -42,6 +43,16 @@ export default async function EditLandingPagePage({
       <PageHeader
         title="랜딩페이지 수정"
         description={`${landingPage.business_name} 페이지 정보를 수정하세요.`}
+        action={
+          <Link
+            href={`/admin/pages/${landingPage.id}/preview`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            미리보기
+          </Link>
+        }
       />
       <div className="flex flex-col gap-6">
         <LandingPageForm

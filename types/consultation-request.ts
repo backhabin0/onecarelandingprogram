@@ -13,6 +13,7 @@ export interface ConsultationRequest {
   message: string | null;
   privacy_consent: boolean;
   status: ConsultationRequestStatus;
+  submission_id: string | null;
   created_at: string;
 }
 
@@ -25,6 +26,12 @@ export interface CreateConsultationRequestInput {
   privacyConsent: boolean;
   /** 스팸 방지용 honeypot 필드. 정상 사용자에게는 항상 빈 값이어야 한다. */
   website: string;
+  /**
+   * 폼 세션마다 클라이언트가 생성하는 고유 식별자(crypto.randomUUID()).
+   * 네트워크 재시도/중복 클릭으로 동일 요청이 두 번 도착해도 idempotency
+   * 처리를 위해 사용한다(17단계, 010 migration의 UNIQUE 인덱스).
+   */
+  submissionId: string;
 }
 
 /** 검증을 마친 뒤 데이터 접근 레이어(lib/consultation-requests.ts)에 전달되는 입력값 */
@@ -33,6 +40,7 @@ export interface InsertConsultationRequestInput {
   name: string;
   phone: string;
   message: string | null;
+  submissionId: string;
 }
 
 /** 목록/상세에서 함께 표시할 랜딩페이지 요약 정보. landing_page_id가 null이면 null. */

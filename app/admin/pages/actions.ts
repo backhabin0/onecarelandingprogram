@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireUser } from "@/lib/auth";
+import { isReservedSlug } from "@/lib/slug";
 import {
   deleteLandingPage,
   duplicateLandingPage,
@@ -43,6 +45,28 @@ const SERVICE_AREA_MAX_LENGTH = 200;
 const FAQ_QUESTION_MAX_LENGTH = 200;
 const FAQ_ANSWER_MAX_LENGTH = 2000;
 
+const BUSINESS_NAME_MAX_LENGTH = 100;
+const TITLE_MAX_LENGTH = 100;
+const HERO_TEXT_MAX_LENGTH = 200;
+const DESCRIPTION_MAX_LENGTH = 2000;
+const PHONE_MAX_LENGTH = 30;
+const ADDRESS_MAX_LENGTH = 200;
+const KAKAO_URL_MAX_LENGTH = 500;
+
+/**
+ * http/https만 허용한다(javascript:/data:/file: 등 위험한 스킴 차단).
+ * open.kakao.com 등 특정 호스트를 강제하지 않는 이유는 카카오 채널/오픈채팅
+ * URL 형태가 바뀔 수 있어, 정상적인 서비스 URL 변화에 대응하기 위해서다.
+ */
+function isSafeExternalUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** SEO/FAQ 관련 화면에 영향을 주는 경로를 한 번에 갱신한다. */
 function revalidateSeoPaths(landingPageId: string, slug: string) {
   revalidatePath(`/admin/pages/${landingPageId}/edit`);
@@ -54,6 +78,11 @@ interface NormalizedInput {
   title: string;
   slug: string;
   template: string;
+  heroText: string;
+  description: string;
+  phone: string;
+  kakaoUrl: string;
+  address: string;
 }
 
 function normalizeAndValidate(
@@ -63,8 +92,23 @@ function normalizeAndValidate(
   const title = input.title.trim();
   const slug = input.slug.trim().toLowerCase();
   const template = input.template.trim();
+  const heroText = input.heroText.trim();
+  const description = input.description.trim();
+  const phone = input.phone.trim();
+  const kakaoUrl = input.kakaoUrl.trim();
+  const address = input.address.trim();
 
-  const normalized = { businessName, title, slug, template };
+  const normalized: NormalizedInput = {
+    businessName,
+    title,
+    slug,
+    template,
+    heroText,
+    description,
+    phone,
+    kakaoUrl,
+    address,
+  };
 
   if (!businessName || !title || !slug || !template) {
     return {
@@ -85,6 +129,68 @@ function normalizeAndValidate(
     };
   }
 
+  if (isReservedSlug(slug)) {
+    return { normalized, error: "사용할 수 없는 URL입니다." };
+  }
+
+  if (businessName.length > BUSINESS_NAME_MAX_LENGTH) {
+    return {
+      normalized,
+      error: `업체명은 ${BUSINESS_NAME_MAX_LENGTH}자 이내로 입력해주세요.`,
+    };
+  }
+
+  if (title.length > TITLE_MAX_LENGTH) {
+    return {
+      normalized,
+      error: `페이지 제목은 ${TITLE_MAX_LENGTH}자 이내로 입력해주세요.`,
+    };
+  }
+
+  if (heroText.length > HERO_TEXT_MAX_LENGTH) {
+    return {
+      normalized,
+      error: `대표 문구는 ${HERO_TEXT_MAX_LENGTH}자 이내로 입력해주세요.`,
+    };
+  }
+
+  if (description.length > DESCRIPTION_MAX_LENGTH) {
+    return {
+      normalized,
+      error: `소개 문구는 ${DESCRIPTION_MAX_LENGTH}자 이내로 입력해주세요.`,
+    };
+  }
+
+  if (phone.length > PHONE_MAX_LENGTH) {
+    return {
+      normalized,
+      error: `전화번호는 ${PHONE_MAX_LENGTH}자 이내로 입력해주세요.`,
+    };
+  }
+
+  if (address.length > ADDRESS_MAX_LENGTH) {
+    return {
+      normalized,
+      error: `주소는 ${ADDRESS_MAX_LENGTH}자 이내로 입력해주세요.`,
+    };
+  }
+
+  if (kakaoUrl) {
+    if (kakaoUrl.length > KAKAO_URL_MAX_LENGTH) {
+      return {
+        normalized,
+        error: `카카오톡 URL은 ${KAKAO_URL_MAX_LENGTH}자 이내로 입력해주세요.`,
+      };
+    }
+    if (!isSafeExternalUrl(kakaoUrl)) {
+      return {
+        normalized,
+        error:
+          "카카오톡 URL은 http:// 또는 https://로 시작하는 주소만 입력할 수 있습니다.",
+      };
+    }
+  }
+
   return { normalized };
 }
 
@@ -97,6 +203,8 @@ export interface CreateLandingPageResult {
 export async function createLandingPageAction(
   input: CreateLandingPageInput
 ): Promise<CreateLandingPageResult> {
+  await requireUser();
+
   const { normalized, error } = normalizeAndValidate(input);
 
   if (error) {
@@ -125,6 +233,8 @@ export async function updateLandingPageAction(
   id: string,
   input: UpdateLandingPageInput
 ): Promise<UpdateLandingPageResult> {
+  await requireUser();
+
   if (!id) {
     return { success: false, error: "잘못된 요청입니다." };
   }
@@ -156,6 +266,8 @@ export interface DeleteLandingPageResult {
 export async function deleteLandingPageAction(
   id: string
 ): Promise<DeleteLandingPageResult> {
+  await requireUser();
+
   if (!id) {
     return { success: false, error: "잘못된 요청입니다." };
   }
@@ -193,6 +305,8 @@ export async function duplicateLandingPageAction(
   sourceId: string,
   input: DuplicateLandingPageInput
 ): Promise<DuplicateLandingPageActionResult> {
+  await requireUser();
+
   if (!sourceId) {
     return { success: false, error: "잘못된 요청입니다." };
   }
@@ -235,6 +349,8 @@ export async function toggleLandingPageStatusAction(
   id: string,
   status: LandingPageStatus
 ): Promise<ToggleLandingPageStatusResult> {
+  await requireUser();
+
   if (!id) {
     return { success: false, error: "잘못된 요청입니다." };
   }
@@ -270,6 +386,8 @@ export async function updateLandingPageImageAction(
   field: LandingPageImageField,
   url: string | null
 ): Promise<UpdateLandingPageImageResult> {
+  await requireUser();
+
   if (!id) {
     return { success: false, error: "잘못된 요청입니다." };
   }
@@ -342,6 +460,8 @@ export async function updateSeoSettingsAction(
   slug: string,
   input: UpdateSeoSettingsInput
 ): Promise<UpdateSeoSettingsResult> {
+  await requireUser();
+
   if (!landingPageId) {
     return { success: false, error: "잘못된 요청입니다." };
   }
@@ -368,6 +488,8 @@ export async function resetSeoOverridesAction(
   landingPageId: string,
   slug: string
 ): Promise<UpdateSeoSettingsResult> {
+  await requireUser();
+
   if (!landingPageId) {
     return { success: false, error: "잘못된 요청입니다." };
   }
@@ -396,6 +518,8 @@ export async function updateSeoOgImageAction(
   slug: string,
   url: string | null
 ): Promise<UpdateSeoOgImageResult> {
+  await requireUser();
+
   if (!landingPageId) {
     return { success: false, error: "잘못된 요청입니다." };
   }
@@ -440,6 +564,8 @@ export async function createFaqAction(
   slug: string,
   input: CreateFaqInput
 ): Promise<FaqActionResult> {
+  await requireUser();
+
   if (!landingPageId) {
     return { success: false, error: "잘못된 요청입니다." };
   }
@@ -467,6 +593,8 @@ export async function updateFaqAction(
   slug: string,
   input: UpdateFaqInput
 ): Promise<FaqActionResult> {
+  await requireUser();
+
   if (!id || !landingPageId) {
     return { success: false, error: "잘못된 요청입니다." };
   }
@@ -494,6 +622,8 @@ export async function deleteFaqAction(
   landingPageId: string,
   slug: string
 ): Promise<FaqActionResult> {
+  await requireUser();
+
   if (!id || !landingPageId) {
     return { success: false, error: "잘못된 요청입니다." };
   }
@@ -513,6 +643,8 @@ export async function moveFaqAction(
   slug: string,
   direction: FaqMoveDirection
 ): Promise<FaqActionResult> {
+  await requireUser();
+
   if (!id || !landingPageId) {
     return { success: false, error: "잘못된 요청입니다." };
   }

@@ -10,6 +10,8 @@ const MESSAGE_MAX_LENGTH = 1000;
 interface ConsultationFormProps {
   slug: string;
   variant?: "light" | "dark";
+  /** true면 입력 UI는 그대로 보여주지만 실제 제출(server action 호출)은 막는다(관리자 미리보기). */
+  preview?: boolean;
 }
 
 const EMPTY_VALUES = {
@@ -22,12 +24,18 @@ const EMPTY_VALUES = {
 export default function ConsultationForm({
   slug,
   variant = "light",
+  preview = false,
 }: ConsultationFormProps) {
   const [values, setValues] = useState(EMPTY_VALUES);
   const [privacyConsent, setPrivacyConsent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // 폼 세션(마운트~성공 제출)마다 하나의 식별자를 유지한다. 네트워크 재시도나
+  // 빠른 중복 클릭으로 같은 제출이 두 번 서버에 도착해도 서버가 이 값으로
+  // 중복을 판별해 같은 상담이 두 번 저장/이메일 발송되지 않게 한다(17단계).
+  // 성공 후에만 다음 제출을 위한 새 식별자를 만든다.
+  const [submissionId, setSubmissionId] = useState(() => crypto.randomUUID());
 
   const isDark = variant === "dark";
   const inputClassName = isDark
@@ -36,12 +44,12 @@ export default function ConsultationForm({
   const labelClassName = `text-sm font-medium ${isDark ? "text-slate-200" : "text-slate-700"}`;
   const buttonClassName = isDark
     ? `mt-1 min-h-12 rounded-lg px-6 text-base font-semibold text-white sm:min-h-14 sm:text-lg ${
-        isSubmitting
+        isSubmitting || preview
           ? "cursor-not-allowed bg-orange-500/60"
           : "bg-orange-500 active:bg-orange-600"
       }`
     : `mt-1 min-h-12 rounded-lg px-6 text-base font-semibold text-white sm:min-h-14 sm:text-lg ${
-        isSubmitting
+        isSubmitting || preview
           ? "cursor-not-allowed bg-blue-400"
           : "bg-blue-600 active:bg-blue-700"
       }`;
@@ -54,6 +62,11 @@ export default function ConsultationForm({
     event.preventDefault();
     if (isSubmitting) return;
 
+    // 방어 계층 1(제출 버튼 disabled)에 더해, 혹시라도 submit 이벤트가 발생하더라도
+    // 관리자 미리보기에서는 실제 DB insert/이메일 발송으로 이어지는 server action을
+    // 절대 호출하지 않는다.
+    if (preview) return;
+
     setErrorMessage(null);
     setSuccessMessage(null);
     setIsSubmitting(true);
@@ -65,6 +78,7 @@ export default function ConsultationForm({
       message: values.message,
       privacyConsent,
       website: values.website,
+      submissionId,
     });
 
     if (!result.success) {
@@ -77,6 +91,7 @@ export default function ConsultationForm({
     setPrivacyConsent(false);
     setSuccessMessage("상담 신청이 완료되었습니다.");
     setIsSubmitting(false);
+    setSubmissionId(crypto.randomUUID());
   };
 
   return (
@@ -169,8 +184,24 @@ export default function ConsultationForm({
         variant={variant}
       />
 
-      <button type="submit" disabled={isSubmitting} className={buttonClassName}>
-        {isSubmitting ? "상담 신청 중..." : "상담 신청하기"}
+      {preview ? (
+        <p
+          className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}
+        >
+          관리자 미리보기에서는 실제 상담이 접수되지 않습니다.
+        </p>
+      ) : null}
+
+      <button
+        type="submit"
+        disabled={isSubmitting || preview}
+        className={buttonClassName}
+      >
+        {preview
+          ? "미리보기에서는 상담 신청이 비활성화됩니다"
+          : isSubmitting
+            ? "상담 신청 중..."
+            : "상담 신청하기"}
       </button>
     </form>
   );

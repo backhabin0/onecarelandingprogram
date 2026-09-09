@@ -12,14 +12,23 @@ export const dynamic = "force-dynamic";
 
 const CSV_UTF8_BOM = String.fromCharCode(0xfeff);
 
+// Excel/Google Sheets는 셀 값이 =, +, -, @로 시작하면 수식으로 실행한다.
+// 고객이 입력한 name/message나 관리자가 입력한 업체명에 이런 문자로
+// 시작하는 값이 있으면 CSV formula injection이 될 수 있으므로, 앞에 한글
+// 텍스트 표시를 강제하는 단일 인용부호(')를 붙여 무조건 텍스트로 취급되게 한다.
+const FORMULA_TRIGGER_PATTERN = /^[=+\-@]/;
+
 /**
- * 값에 쉼표/줄바꿈/따옴표가 있어도 CSV 컬럼이 깨지지 않도록 escape한다.
+ * 값에 쉼표/줄바꿈/따옴표가 있어도 CSV 컬럼이 깨지지 않도록 escape하고,
+ * 수식으로 해석될 수 있는 선행 문자는 먼저 무력화한다.
  */
 function escapeCsvField(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const safeValue = FORMULA_TRIGGER_PATTERN.test(value) ? `'${value}` : value;
+
+  if (/[",\n\r]/.test(safeValue)) {
+    return `"${safeValue.replace(/"/g, '""')}"`;
   }
-  return value;
+  return safeValue;
 }
 
 /**

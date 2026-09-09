@@ -7,6 +7,8 @@ interface CTAButtonsProps {
   kakaoUrl: string | null;
   slug: string;
   size?: "md" | "lg";
+  /** true면 tel:/카카오 링크는 그대로 동작하지만 Analytics 이벤트는 기록하지 않는다(관리자 미리보기). */
+  preview?: boolean;
 }
 
 const SIZE_CLASSNAMES: Record<"md" | "lg", string> = {
@@ -19,6 +21,7 @@ export default function CTAButtons({
   kakaoUrl,
   slug,
   size = "md",
+  preview = false,
 }: CTAButtonsProps) {
   if (!phone && !kakaoUrl) {
     return null;
@@ -31,7 +34,9 @@ export default function CTAButtons({
       {phone ? (
         <a
           href={`tel:${phone.replace(/[^\d+]/g, "")}`}
-          onClick={() => sendAnalyticsEvent(slug, "phone_click")}
+          onClick={() => {
+            if (!preview) sendAnalyticsEvent(slug, "phone_click");
+          }}
           className={`inline-flex items-center justify-center rounded-lg bg-blue-600 font-semibold text-white active:bg-blue-700 ${sizeClassName}`}
         >
           전화 상담하기
@@ -42,7 +47,9 @@ export default function CTAButtons({
           href={kakaoUrl}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={() => sendAnalyticsEvent(slug, "kakao_click")}
+          onClick={() => {
+            if (!preview) sendAnalyticsEvent(slug, "kakao_click");
+          }}
           className={`inline-flex items-center justify-center rounded-lg bg-yellow-400 font-semibold text-slate-900 active:bg-yellow-500 ${sizeClassName}`}
         >
           카카오톡 상담

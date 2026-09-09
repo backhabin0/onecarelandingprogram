@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireUser } from "@/lib/auth";
 import { updateConsultationRequestStatus } from "@/lib/consultation-requests";
 import { isConsultationRequestStatus } from "@/lib/consultation-status";
 
@@ -19,6 +20,8 @@ export async function updateConsultationStatusAction(
   id: string,
   status: string
 ): Promise<UpdateConsultationStatusResult> {
+  await requireUser();
+
   if (!id) {
     return { success: false, error: "잘못된 요청입니다." };
   }

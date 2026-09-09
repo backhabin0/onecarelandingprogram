@@ -147,7 +147,7 @@ export default function SeoSettingsPanel({
     setImageError(null);
     if (!file) return;
 
-    const validation = validateImageFile(file, "og");
+    const validation = await validateImageFile(file, "og");
     if (!validation.valid) {
       setImageError(validation.error ?? "이미지를 업로드하지 못했습니다.");
       if (fileInputRef.current) fileInputRef.current.value = "";

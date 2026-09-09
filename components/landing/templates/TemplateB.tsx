@@ -6,10 +6,13 @@ import LandingFooter from "@/components/landing/LandingFooter";
 import CTAButtons from "@/components/landing/CTAButtons";
 import ConsultationForm from "@/components/landing/ConsultationForm";
 import FAQSection from "@/components/landing/FAQSection";
+import SafeImage from "@/components/landing/SafeImage";
 
 interface TemplateBProps {
   landingPage: LandingPage;
   faqs: ResolvedFaq[];
+  /** true면 Analytics 기록/상담 제출을 막는다(관리자 미리보기). 시각적 레이아웃은 동일하다. */
+  preview?: boolean;
 }
 
 /**
@@ -17,7 +20,11 @@ interface TemplateBProps {
  * Template A와 달리 hero_text를 Hero에 묶지 않고 별도의 "핵심 혜택 강조" 배너로
  * 분리해 두 템플릿의 섹션 구성 자체가 다르게 보이도록 한다.
  */
-export default function TemplateB({ landingPage, faqs }: TemplateBProps) {
+export default function TemplateB({
+  landingPage,
+  faqs,
+  preview = false,
+}: TemplateBProps) {
   const {
     business_name: businessName,
     title,
@@ -37,8 +44,7 @@ export default function TemplateB({ landingPage, faqs }: TemplateBProps) {
       <main className="flex-1">
         <section className="relative overflow-hidden bg-slate-900">
           {mainImageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <SafeImage
               src={mainImageUrl}
               alt=""
               className="absolute inset-0 h-full w-full object-cover opacity-50"
@@ -56,6 +62,7 @@ export default function TemplateB({ landingPage, faqs }: TemplateBProps) {
               kakaoUrl={kakaoUrl}
               slug={landingPage.slug}
               size="lg"
+              preview={preview}
             />
           </div>
         </section>
@@ -100,6 +107,7 @@ export default function TemplateB({ landingPage, faqs }: TemplateBProps) {
                 kakaoUrl={kakaoUrl}
                 slug={landingPage.slug}
                 size="lg"
+                preview={preview}
               />
             </div>
           </section>
@@ -114,7 +122,11 @@ export default function TemplateB({ landingPage, faqs }: TemplateBProps) {
               아래 정보를 남겨주시면 빠르게 연락드리겠습니다.
             </p>
             <div className="mt-8">
-              <ConsultationForm slug={landingPage.slug} variant="dark" />
+              <ConsultationForm
+                slug={landingPage.slug}
+                variant="dark"
+                preview={preview}
+              />
             </div>
           </div>
         </section>

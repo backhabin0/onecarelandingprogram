@@ -1,4 +1,5 @@
 import CTAButtons from "@/components/landing/CTAButtons";
+import SafeImage from "@/components/landing/SafeImage";
 
 interface HeroSectionProps {
   title: string;
@@ -8,6 +9,7 @@ interface HeroSectionProps {
   kakaoUrl: string | null;
   slug: string;
   businessName: string;
+  preview?: boolean;
 }
 
 export default function HeroSection({
@@ -18,13 +20,13 @@ export default function HeroSection({
   kakaoUrl,
   slug,
   businessName,
+  preview = false,
 }: HeroSectionProps) {
   return (
     <section className="bg-slate-50">
       <div className="mx-auto flex max-w-3xl flex-col gap-8 px-5 py-12 sm:py-16 lg:py-20">
         {mainImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <SafeImage
             src={mainImageUrl}
             alt={`${businessName} 대표 이미지`}
             className="w-full rounded-xl object-cover"
@@ -38,7 +40,7 @@ export default function HeroSection({
             <p className="text-lg text-slate-600 sm:text-xl">{heroText}</p>
           ) : null}
         </div>
-        <CTAButtons phone={phone} kakaoUrl={kakaoUrl} slug={slug} />
+        <CTAButtons phone={phone} kakaoUrl={kakaoUrl} slug={slug} preview={preview} />
       </div>
     </section>
   );

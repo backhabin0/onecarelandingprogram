@@ -10,6 +10,8 @@ const MESSAGE_MAX_LENGTH = 1000;
 const PHONE_ALLOWED_PATTERN = /^[0-9+\-\s()]+$/;
 const PHONE_DIGITS_MIN = 9;
 const PHONE_DIGITS_MAX = 11;
+const SUBMISSION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const GENERIC_ERROR =
   "상담 신청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.";
@@ -57,6 +59,10 @@ function validateInput(
     return { error: GENERIC_ERROR };
   }
 
+  if (!SUBMISSION_ID_PATTERN.test(input.submissionId)) {
+    return { error: GENERIC_ERROR };
+  }
+
   return {};
 }
 
@@ -97,10 +103,18 @@ export async function createConsultationRequestAction(
     name,
     phone,
     message,
+    submissionId: input.submissionId,
   });
 
   if (!result.success) {
     return { success: false, error: result.error ?? GENERIC_ERROR };
+  }
+
+  // duplicate === true면 네트워크 재시도/중복 클릭으로 이미 처리된 동일
+  // submission_id가 다시 도착한 것이다 — 새 row도, 새 이메일도 만들지 않고
+  // 첫 제출과 동일한 성공 응답만 돌려준다(17단계 idempotency).
+  if (result.duplicate) {
+    return { success: true };
   }
 
   // 이메일 알림은 부가 기능이다 — 실패해도 이미 저장된 상담 신청 자체는

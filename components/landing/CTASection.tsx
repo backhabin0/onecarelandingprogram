@@ -4,9 +4,15 @@ interface CTASectionProps {
   phone: string | null;
   kakaoUrl: string | null;
   slug: string;
+  preview?: boolean;
 }
 
-export default function CTASection({ phone, kakaoUrl, slug }: CTASectionProps) {
+export default function CTASection({
+  phone,
+  kakaoUrl,
+  slug,
+  preview = false,
+}: CTASectionProps) {
   if (!phone && !kakaoUrl) {
     return null;
   }
@@ -17,7 +23,7 @@ export default function CTASection({ phone, kakaoUrl, slug }: CTASectionProps) {
         <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
           지금 바로 상담을 시작해보세요
         </h2>
-        <CTAButtons phone={phone} kakaoUrl={kakaoUrl} slug={slug} />
+        <CTAButtons phone={phone} kakaoUrl={kakaoUrl} slug={slug} preview={preview} />
       </div>
     </section>
   );

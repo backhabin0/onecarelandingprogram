@@ -12,13 +12,19 @@ import LandingFooter from "@/components/landing/LandingFooter";
 interface TemplateAProps {
   landingPage: LandingPage;
   faqs: ResolvedFaq[];
+  /** true면 Analytics 기록/상담 제출을 막는다(관리자 미리보기). 시각적 레이아웃은 동일하다. */
+  preview?: boolean;
 }
 
 /**
  * 깔끔하고 신뢰감 있는 기본 서비스형 레이아웃.
  * 5단계에서 만든 기본 고객용 페이지 구성을 그대로 사용한다.
  */
-export default function TemplateA({ landingPage, faqs }: TemplateAProps) {
+export default function TemplateA({
+  landingPage,
+  faqs,
+  preview = false,
+}: TemplateAProps) {
   return (
     <div className="flex min-h-screen flex-col bg-white">
       <LandingHeader
@@ -34,6 +40,7 @@ export default function TemplateA({ landingPage, faqs }: TemplateAProps) {
           kakaoUrl={landingPage.kakao_url}
           slug={landingPage.slug}
           businessName={landingPage.business_name}
+          preview={preview}
         />
         <IntroSection description={landingPage.description} />
         <BusinessInfoSection
@@ -45,6 +52,7 @@ export default function TemplateA({ landingPage, faqs }: TemplateAProps) {
           phone={landingPage.phone}
           kakaoUrl={landingPage.kakao_url}
           slug={landingPage.slug}
+          preview={preview}
         />
         <section className="border-t border-slate-100 bg-slate-50">
           <div className="mx-auto max-w-xl px-5 py-12 sm:py-16">
@@ -55,7 +63,11 @@ export default function TemplateA({ landingPage, faqs }: TemplateAProps) {
               아래 정보를 남겨주시면 빠르게 연락드리겠습니다.
             </p>
             <div className="mt-6">
-              <ConsultationForm slug={landingPage.slug} variant="light" />
+              <ConsultationForm
+                slug={landingPage.slug}
+                variant="light"
+                preview={preview}
+              />
             </div>
           </div>
         </section>

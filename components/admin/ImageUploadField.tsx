@@ -65,7 +65,7 @@ export default function ImageUploadField({
 
     if (!file) return;
 
-    const validation = validateImageFile(file, kind);
+    const validation = await validateImageFile(file, kind);
     if (!validation.valid) {
       setError(validation.error ?? "이미지를 업로드하지 못했습니다.");
       resetInput();

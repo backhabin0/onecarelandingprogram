@@ -202,6 +202,14 @@ export default function PageTable({ pages }: PageTableProps) {
                     수정
                   </Link>
                   <Link
+                    href={`/admin/pages/${page.id}/preview`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                  >
+                    미리보기
+                  </Link>
+                  <Link
                     href={`/admin/pages/${page.id}/duplicate`}
                     className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
                   >

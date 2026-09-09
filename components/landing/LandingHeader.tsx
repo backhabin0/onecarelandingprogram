@@ -1,3 +1,5 @@
+import SafeImage from "@/components/landing/SafeImage";
+
 interface LandingHeaderProps {
   businessName: string;
   logoUrl: string | null;
@@ -11,8 +13,7 @@ export default function LandingHeader({
     <header className="border-b border-slate-100 bg-white">
       <div className="mx-auto flex max-w-3xl items-center gap-3 px-5 py-4">
         {logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <SafeImage
             src={logoUrl}
             alt={`${businessName} 로고`}
             className="h-8 w-8 shrink-0 rounded object-contain"

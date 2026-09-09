@@ -40,10 +40,49 @@ function isAllowedMimeType(type: string): type is AllowedMimeType {
   return (ALLOWED_MIME_TYPES as readonly string[]).includes(type);
 }
 
-export function validateImageFile(
+// JPEG/PNG/WEBP의 파일 시작 바이트("magic bytes"). File.type은 브라우저가
+// 보고하는 값이라 확장자만 바꾼 파일이면 쉽게 속일 수 있으므로, 실제 파일
+// 내용의 시작 바이트도 확인해 한 번 더 걸러낸다. 이 검사는 브라우저에서
+// 업로드 전에 실행되는 클라이언트 레벨 방어이며, 서버가 파일을 직접 받는
+// 구조가 아니므로(브라우저 → Supabase Storage 직접 업로드) 악의적인 관리자의
+// 우회까지 막는 절대적인 서버 검증은 아니다 — 잘못된/변조된 파일을 실수로
+// 올리는 상황에 대한 방어에 가깝다.
+const SIGNATURE_HEADER_SIZE = 12;
+
+function matchesSignature(bytes: Uint8Array, signature: readonly number[]): boolean {
+  return signature.every((byte, index) => bytes[index] === byte);
+}
+
+async function hasValidImageSignature(
+  file: File,
+  mimeType: AllowedMimeType
+): Promise<boolean> {
+  const header = new Uint8Array(
+    await file.slice(0, SIGNATURE_HEADER_SIZE).arrayBuffer()
+  );
+
+  if (mimeType === "image/jpeg") {
+    return matchesSignature(header, [0xff, 0xd8, 0xff]);
+  }
+
+  if (mimeType === "image/png") {
+    return matchesSignature(
+      header,
+      [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+    );
+  }
+
+  // WebP = RIFF(4 bytes) + 파일 크기(4 bytes) + "WEBP"(4 bytes)
+  return (
+    matchesSignature(header, [0x52, 0x49, 0x46, 0x46]) &&
+    matchesSignature(header.slice(8, 12), [0x57, 0x45, 0x42, 0x50])
+  );
+}
+
+export async function validateImageFile(
   file: File,
   kind: LandingImageKind
-): ValidateImageResult {
+): Promise<ValidateImageResult> {
   if (!isAllowedMimeType(file.type)) {
     return {
       valid: false,
@@ -53,6 +92,15 @@ export function validateImageFile(
 
   if (file.size > MAX_SIZE_BYTES[kind]) {
     return { valid: false, error: MAX_SIZE_MESSAGE[kind] };
+  }
+
+  const signatureValid = await hasValidImageSignature(file, file.type);
+  if (!signatureValid) {
+    return {
+      valid: false,
+      error:
+        "파일 내용이 이미지 형식과 일치하지 않습니다. 실제 JPG/PNG/WEBP 파일을 업로드해주세요.",
+    };
   }
 
   return { valid: true };
@@ -76,9 +124,15 @@ export function buildObjectPath(
   return `landing-pages/${landingPageId}/${filename}`;
 }
 
+/** buildObjectPath()가 실제로 만드는 경로 접두사. 이 밖의 경로는 우리가 업로드한 object가 아니다. */
+const OBJECT_PATH_PREFIX = "landing-pages/";
+
 /**
  * Storage public URL(.../storage/v1/object/public/{bucket}/{path})에서
- * bucket 내부 object path만 추출한다. 이 bucket의 URL이 아니면 null.
+ * bucket 내부 object path만 추출한다. 이 bucket의 URL이 아니거나, 우리가
+ * 실제로 업로드하는 "landing-pages/" 경로 형태(buildObjectPath 참고)가
+ * 아니면 null — 외부에서 받은 임의의 URL을 Storage 삭제 경로로 오인해
+ * 변환하지 않기 위한 안전장치다(삭제는 항상 이 함수를 거쳐야 한다).
  */
 export function getStoragePathFromPublicUrl(publicUrl: string): string | null {
   const marker = `/storage/v1/object/public/${LANDING_PAGE_ASSETS_BUCKET}/`;
@@ -86,15 +140,22 @@ export function getStoragePathFromPublicUrl(publicUrl: string): string | null {
   if (index === -1) return null;
 
   const pathWithQuery = publicUrl.slice(index + marker.length);
-  const path = pathWithQuery.split("?")[0];
+  const rawPath = pathWithQuery.split("?")[0];
 
-  if (!path) return null;
+  if (!rawPath) return null;
 
+  let path: string;
   try {
-    return decodeURIComponent(path);
+    path = decodeURIComponent(rawPath);
   } catch {
-    return path;
+    path = rawPath;
   }
+
+  if (!path.startsWith(OBJECT_PATH_PREFIX) || path.includes("..")) {
+    return null;
+  }
+
+  return path;
 }
 
 export interface UploadImageResult {
@@ -112,7 +173,7 @@ export async function uploadLandingPageImage(
   kind: LandingImageKind,
   file: File
 ): Promise<UploadImageResult> {
-  const validation = validateImageFile(file, kind);
+  const validation = await validateImageFile(file, kind);
   if (!validation.valid) {
     return { error: validation.error };
   }
