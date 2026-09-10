@@ -1,3 +1,4 @@
+import Link from "next/link";
 import PageHeader from "@/components/admin/PageHeader";
 import Card from "@/components/admin/Card";
 import SiteVerificationSettingsPanel from "@/components/admin/SiteVerificationSettingsPanel";
@@ -19,9 +20,23 @@ export default async function AdminSettingsPage() {
       <SiteVerificationSettingsPanel initialSettings={siteVerification} />
 
       <Card className="p-6">
+        <h2 className="text-base font-semibold text-slate-900">백업 및 복구</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          랜딩페이지, SEO/FAQ, 상담, 통계 데이터를 백업 파일로 내려받고, 필요할
+          때 안전하게(병합 방식) 복구할 수 있습니다.
+        </p>
+        <Link
+          href="/admin/settings/backup"
+          className="mt-4 inline-flex w-fit items-center justify-center rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          백업 및 복구 화면으로 이동
+        </Link>
+      </Card>
+
+      <Card className="p-6">
         <p className="text-sm text-slate-500">
-          현재 단계에서는 검색엔진 소유확인 설정만 제공됩니다. 다음 단계에서
-          계정 관리 등의 기능이 추가될 예정입니다.
+          현재 단계에서는 검색엔진 소유확인 설정과 백업/복구 기능이
+          제공됩니다. 다음 단계에서 계정 관리 등의 기능이 추가될 예정입니다.
         </p>
       </Card>
     </div>
