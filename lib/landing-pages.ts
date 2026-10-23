@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import { removeLandingPageImageByUrl } from "@/lib/storage/landing-page-assets";
 import { getSeoSettingsByLandingPageId } from "@/lib/seo-settings";
 import { getFaqsByLandingPageId } from "@/lib/faqs";
@@ -18,20 +19,28 @@ interface GetLandingPagesResult {
   error: string | null;
 }
 
+/**
+ * 전체 랜딩페이지 목록(통계/상담 화면의 랜딩페이지 필터 드롭다운용).
+ * Supabase 1,000행 상한에 잘리지 않도록 1,000행씩 끝까지 나눠 읽는다.
+ */
 export async function getLandingPages(): Promise<GetLandingPagesResult> {
   try {
     const supabase = await getSupabaseServerClient();
-    const { data, error } = await supabase
-      .from("landing_pages")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data, error } = await fetchAllRows<LandingPage>((from, to) =>
+      supabase
+        .from("landing_pages")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to)
+    );
 
     if (error) {
       console.error("[landing_pages] select error:", error);
       return { data: [], error: "랜딩페이지 목록을 불러오지 못했습니다." };
     }
 
-    return { data: (data as LandingPage[]) ?? [], error: null };
+    return { data, error: null };
   } catch (err) {
     console.error("[landing_pages] client error:", err);
     return {
@@ -40,6 +49,117 @@ export async function getLandingPages(): Promise<GetLandingPagesResult> {
         err instanceof Error
           ? err.message
           : "랜딩페이지 목록을 불러오는 중 오류가 발생했습니다.",
+    };
+  }
+}
+
+/** 관리자 랜딩페이지 목록 화면의 한 페이지에 보여줄 건수 */
+export const LANDING_PAGES_PAGE_SIZE = 50;
+
+interface GetLandingPagesPageResult {
+  data: LandingPage[];
+  count: number;
+  error: string | null;
+}
+
+/** 관리자 랜딩페이지 목록(/admin/pages) 서버 페이지네이션 조회. */
+export async function getLandingPagesPage(
+  page: number
+): Promise<GetLandingPagesPageResult> {
+  try {
+    const supabase = await getSupabaseServerClient();
+    const currentPage = page > 0 ? page : 1;
+    const from = (currentPage - 1) * LANDING_PAGES_PAGE_SIZE;
+    const to = from + LANDING_PAGES_PAGE_SIZE - 1;
+
+    const { data, error, count } = await supabase
+      .from("landing_pages")
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      // 마지막 페이지를 넘는 page로 range를 요청하면 PostgREST가 416(PGRST103)을
+      // 돌려준다. 오류가 아니라 "빈 페이지"로 취급하고 전체 건수만 다시 센다.
+      if (error.code === "PGRST103") {
+        const { count: total, error: countError } = await supabase
+          .from("landing_pages")
+          .select("id", { count: "exact", head: true });
+        if (!countError) {
+          return { data: [], count: total ?? 0, error: null };
+        }
+      }
+      console.error("[landing_pages] select page error:", error);
+      return { data: [], count: 0, error: "랜딩페이지 목록을 불러오지 못했습니다." };
+    }
+
+    return { data: (data as LandingPage[]) ?? [], count: count ?? 0, error: null };
+  } catch (err) {
+    console.error("[landing_pages] client error:", err);
+    return {
+      data: [],
+      count: 0,
+      error:
+        err instanceof Error
+          ? err.message
+          : "랜딩페이지 목록을 불러오는 중 오류가 발생했습니다.",
+    };
+  }
+}
+
+export interface LandingPageCounts {
+  total: number;
+  public: number;
+  private: number;
+}
+
+interface GetLandingPageCountsResult {
+  data: LandingPageCounts;
+  error: string | null;
+}
+
+/** 대시보드 통계 카드용 — head count만 조회한다(행 데이터 없음). */
+export async function getLandingPageCounts(): Promise<GetLandingPageCountsResult> {
+  const empty: LandingPageCounts = { total: 0, public: 0, private: 0 };
+
+  try {
+    const supabase = await getSupabaseServerClient();
+    const countByStatus = (status?: LandingPageStatus) => {
+      const query = supabase
+        .from("landing_pages")
+        .select("id", { count: "exact", head: true });
+      return status ? query.eq("status", status) : query;
+    };
+
+    const [totalRes, publicRes, privateRes] = await Promise.all([
+      countByStatus(),
+      countByStatus("public"),
+      countByStatus("private"),
+    ]);
+
+    const firstError = totalRes.error ?? publicRes.error ?? privateRes.error;
+    if (firstError) {
+      console.error("[landing_pages] count error:", firstError);
+      return { data: empty, error: "랜딩페이지 현황을 불러오지 못했습니다." };
+    }
+
+    return {
+      data: {
+        total: totalRes.count ?? 0,
+        public: publicRes.count ?? 0,
+        private: privateRes.count ?? 0,
+      },
+      error: null,
+    };
+  } catch (err) {
+    console.error("[landing_pages] client error:", err);
+    return {
+      data: empty,
+      error:
+        err instanceof Error
+          ? err.message
+          : "랜딩페이지 현황을 불러오는 중 오류가 발생했습니다.",
     };
   }
 }
@@ -447,6 +567,14 @@ export interface SitemapLandingPageRow {
   slug: string;
   updated_at: string;
   created_at: string;
+  /** 대기열에서 공개된 시각(013). 관리자가 직접 만든 페이지는 null */
+  published_at: string | null;
+  /** 016: 지역 모음 페이지(/area/{city_slug})를 sitemap에 넣을 때 쓴다 */
+  title: string;
+  region: string | null;
+  keyword: string | null;
+  city: string | null;
+  city_slug: string | null;
 }
 
 export interface GetPublicLandingPagesForSitemapResult {
@@ -465,30 +593,39 @@ export interface GetPublicLandingPagesForSitemapResult {
 export async function getPublicLandingPagesForSitemap(): Promise<GetPublicLandingPagesForSitemapResult> {
   try {
     const supabase = await getSupabaseServerClient();
-    const { data, error } = await supabase
-      .from("landing_pages")
-      .select(
-        "slug, updated_at, created_at, seo_settings:landing_page_seo_settings(seo_noindex)"
-      )
-      .eq("status", "public")
-      .order("created_at", { ascending: false });
+    // Supabase 1,000행 상한에 잘리지 않도록 1,000행씩 끝까지 나눠 읽는다.
+    const { data: rows, error } = await fetchAllRows<
+      SitemapLandingPageRow & { seo_settings: { seo_noindex: boolean } | null }
+    >((from, to) =>
+      supabase
+        .from("landing_pages")
+        .select(
+          "slug, title, updated_at, created_at, published_at, region, keyword, city, city_slug, seo_settings:landing_page_seo_settings(seo_noindex)"
+        )
+        .eq("status", "public")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to)
+    );
 
     if (error) {
       console.error("[landing_pages] select public for sitemap error:", error);
       return { data: [], error: "랜딩페이지 목록을 불러오지 못했습니다." };
     }
 
-    const rows = (data ?? []) as unknown as Array<
-      SitemapLandingPageRow & { seo_settings: { seo_noindex: boolean } | null }
-    >;
-
     return {
       data: rows
         .filter((row) => row.seo_settings?.seo_noindex !== true)
-        .map(({ slug, updated_at, created_at }) => ({
+        .map(({ slug, title, updated_at, created_at, published_at, region, keyword, city, city_slug }) => ({
           slug,
+          title,
           updated_at,
           created_at,
+          published_at: published_at ?? null,
+          region: region ?? null,
+          keyword: keyword ?? null,
+          city: city ?? null,
+          city_slug: city_slug ?? null,
         })),
       error: null,
     };
@@ -513,17 +650,21 @@ export async function suggestDuplicateSlug(sourceSlug: string): Promise<string> 
 
   try {
     const supabase = await getSupabaseServerClient();
-    const { data, error } = await supabase
-      .from("landing_pages")
-      .select("slug")
-      .like("slug", `${base}%`);
+    const { data, error } = await fetchAllRows<{ slug: string }>((from, to) =>
+      supabase
+        .from("landing_pages")
+        .select("slug")
+        .like("slug", `${base}%`)
+        .order("slug", { ascending: true })
+        .range(from, to)
+    );
 
     if (error) {
       console.error("[landing_pages] slug suggestion select error:", error);
       return base;
     }
 
-    const existingSlugs = new Set((data ?? []).map((row) => row.slug as string));
+    const existingSlugs = new Set(data.map((row) => row.slug));
 
     if (!existingSlugs.has(base)) {
       return base;

@@ -2,10 +2,17 @@ import type { LandingPage } from "@/types/landing-page";
 import type { ResolvedFaq } from "@/types/seo";
 import type { ResolvedLandingPageSeo } from "@/lib/seo-resolver";
 import {
+  buildBreadcrumbJsonLd,
   buildFaqPageJsonLd,
   buildOrganizationJsonLd,
   buildWebPageJsonLd,
 } from "@/lib/structured-data";
+import {
+  buildHeadline,
+  buildImageAlt,
+  buildPageBreadcrumbs,
+  type RelatedLinks,
+} from "@/lib/local-seo";
 import TemplateA from "@/components/landing/templates/TemplateA";
 import TemplateB from "@/components/landing/templates/TemplateB";
 import { resolveTemplateId } from "@/components/landing/templates";
@@ -17,6 +24,8 @@ interface LandingPageRendererProps {
   faqs: ResolvedFaq[];
   /** public 렌더링에서만 필요하다(JSON-LD 계산용). preview 모드에서는 JSON-LD를 출력하지 않으므로 생략할 수 있다. */
   resolvedSeo?: ResolvedLandingPageSeo;
+  /** 하단 내부 링크(7단계). 공개 페이지에서만 넘긴다 — 미리보기에서는 생략 */
+  related?: RelatedLinks | null;
   /**
    * "public"(기본값): 실제 고객용 페이지. JSON-LD, page_view/전화/카카오 Analytics,
    * 실제 상담 제출이 모두 동작한다.
@@ -30,9 +39,15 @@ export default function LandingPageRenderer({
   landingPage,
   faqs,
   resolvedSeo,
+  related = null,
   mode = "public",
 }: LandingPageRendererProps) {
   const preview = mode === "preview";
+
+  // H1·경로·사진 alt는 지역·키워드(대기열에서 공개된 페이지)를 반영한다. 두 템플릿이 같은 값을 쓴다.
+  const headline = buildHeadline(landingPage.title, landingPage.region, landingPage.keyword);
+  const imageAlt = buildImageAlt(landingPage);
+  const breadcrumbs = buildPageBreadcrumbs(landingPage, headline);
 
   const webPageJsonLd = resolvedSeo
     ? buildWebPageJsonLd(landingPage, resolvedSeo)
@@ -41,6 +56,17 @@ export default function LandingPageRenderer({
     ? buildOrganizationJsonLd(landingPage, resolvedSeo)
     : null;
   const faqPageJsonLd = buildFaqPageJsonLd(faqs);
+  const breadcrumbJsonLd = buildBreadcrumbJsonLd(breadcrumbs);
+
+  const templateProps = {
+    landingPage,
+    faqs,
+    headline,
+    imageAlt,
+    breadcrumbs,
+    related: preview ? null : related,
+    preview,
+  };
 
   return (
     <>
@@ -49,11 +75,12 @@ export default function LandingPageRenderer({
         <JsonLd data={organizationJsonLd} />
       ) : null}
       {!preview && faqPageJsonLd ? <JsonLd data={faqPageJsonLd} /> : null}
+      {!preview && breadcrumbJsonLd ? <JsonLd data={breadcrumbJsonLd} /> : null}
       {!preview ? <PageViewTracker slug={landingPage.slug} /> : null}
       {resolveTemplateId(landingPage.template) === "template-b" ? (
-        <TemplateB landingPage={landingPage} faqs={faqs} preview={preview} />
+        <TemplateB {...templateProps} />
       ) : (
-        <TemplateA landingPage={landingPage} faqs={faqs} preview={preview} />
+        <TemplateA {...templateProps} />
       )}
     </>
   );

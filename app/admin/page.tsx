@@ -1,22 +1,25 @@
 import Link from "next/link";
 import PageHeader from "@/components/admin/PageHeader";
 import Card from "@/components/admin/Card";
-import { getLandingPages } from "@/lib/landing-pages";
+import { getLandingPageCounts } from "@/lib/landing-pages";
 import { mockTemplates } from "@/lib/mock-data";
+import { scheduleAutoIndexNow } from "@/lib/indexnow-schedule";
 
 // 대시보드 통계는 항상 최신 DB 상태를 조회해야 하므로 정적 프리렌더링을 사용하지 않는다.
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
-  const { data: pages, error } = await getLandingPages();
+  // 행 데이터를 가져와 세면 1,000행에서 잘리므로 DB count 쿼리로 집계한다.
+  const { data: counts, error } = await getLandingPageCounts();
 
-  const publishedCount = pages.filter((page) => page.status === "public").length;
-  const draftCount = pages.filter((page) => page.status === "private").length;
+  // 관리자 화면 접속 시: 아직 검색엔진에 알리지 않은 공개 페이지가 있으면
+  // 응답을 보낸 뒤(after) IndexNow로 보낸다. 실패해도 화면에는 영향 없음.
+  await scheduleAutoIndexNow();
 
   const stats = [
-    { label: "전체 랜딩페이지", value: pages.length },
-    { label: "공개 중", value: publishedCount },
-    { label: "비공개", value: draftCount },
+    { label: "전체 랜딩페이지", value: counts.total },
+    { label: "공개 중", value: counts.public },
+    { label: "비공개", value: counts.private },
     { label: "등록된 템플릿", value: mockTemplates.length },
   ];
 

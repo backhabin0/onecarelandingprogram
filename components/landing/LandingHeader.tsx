@@ -16,7 +16,9 @@ export default function LandingHeader({
           <SafeImage
             src={logoUrl}
             alt={`${businessName} 로고`}
-            className="h-8 w-8 shrink-0 rounded object-contain"
+            wrapperClassName="relative h-8 w-8 shrink-0"
+            className="rounded object-contain"
+            sizes="32px"
           />
         ) : null}
         <span className="truncate text-base font-semibold text-slate-900">

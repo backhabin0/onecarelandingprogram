@@ -30,7 +30,7 @@ export default async function AdminBackupPage() {
         {error ? (
           <p className="mt-2 text-sm text-red-600">{error}</p>
         ) : (
-          <dl className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-5">
+          <dl className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             <div>
               <dt className="text-xs text-slate-500">랜딩페이지</dt>
               <dd className="text-lg font-semibold text-slate-900">
@@ -59,6 +59,12 @@ export default async function AdminBackupPage() {
               <dt className="text-xs text-slate-500">통계 이벤트</dt>
               <dd className="text-lg font-semibold text-slate-900">
                 {counts.events.toLocaleString()}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">공개 대기열</dt>
+              <dd className="text-lg font-semibold text-slate-900">
+                {counts.publishQueue.toLocaleString()}
               </dd>
             </div>
           </dl>

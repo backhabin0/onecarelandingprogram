@@ -11,6 +11,7 @@ import {
   updateFaqAction,
 } from "@/app/admin/pages/actions";
 import { MAX_FAQS_PER_LANDING_PAGE } from "@/lib/faq-constants";
+import { FAQ_MAX_LENGTH } from "@/lib/landing-page-validation";
 
 interface FaqManagerProps {
   landingPageId: string;
@@ -18,8 +19,6 @@ interface FaqManagerProps {
   initialFaqs: LandingPageFaq[];
 }
 
-const QUESTION_MAX_LENGTH = 200;
-const ANSWER_MAX_LENGTH = 2000;
 
 const inputClassName =
   "w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
@@ -213,7 +212,7 @@ export default function FaqManager({
                   <input
                     id={`edit-question-${faq.id}`}
                     className={inputClassName}
-                    maxLength={QUESTION_MAX_LENGTH}
+                    maxLength={FAQ_MAX_LENGTH.question}
                     value={editDraft.question}
                     onChange={(e) =>
                       setEditDraft((prev) => ({ ...prev, question: e.target.value }))
@@ -225,7 +224,7 @@ export default function FaqManager({
                     id={`edit-answer-${faq.id}`}
                     rows={3}
                     className={inputClassName}
-                    maxLength={ANSWER_MAX_LENGTH}
+                    maxLength={FAQ_MAX_LENGTH.answer}
                     value={editDraft.answer}
                     onChange={(e) =>
                       setEditDraft((prev) => ({ ...prev, answer: e.target.value }))
@@ -334,7 +333,7 @@ export default function FaqManager({
             required
             className={inputClassName}
             placeholder="예: 주차장이 있나요?"
-            maxLength={QUESTION_MAX_LENGTH}
+            maxLength={FAQ_MAX_LENGTH.question}
             value={newFaq.question}
             onChange={(e) => setNewFaq((prev) => ({ ...prev, question: e.target.value }))}
             disabled={!canAddMore}
@@ -347,7 +346,7 @@ export default function FaqManager({
             rows={3}
             className={inputClassName}
             placeholder="예: 건물 지하 주차장을 이용할 수 있습니다."
-            maxLength={ANSWER_MAX_LENGTH}
+            maxLength={FAQ_MAX_LENGTH.answer}
             value={newFaq.answer}
             onChange={(e) => setNewFaq((prev) => ({ ...prev, answer: e.target.value }))}
             disabled={!canAddMore}

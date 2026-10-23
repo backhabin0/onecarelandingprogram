@@ -15,6 +15,15 @@ export interface LandingPage {
   main_image_url: string | null;
   template: string;
   status: LandingPageStatus;
+  /** 대기열에서 공개된 시각(013 migration). 관리자가 직접 만든 페이지와 기존 페이지는 null */
+  published_at: string | null;
+  /** 016: 지역 SEO용 칸. 대기열에서 공개된 페이지에만 값이 있고, 그 밖에는 null */
+  region: string | null;
+  keyword: string | null;
+  city: string | null;
+  city_slug: string | null;
+  main_image_alt: string | null;
+  case_study: string | null;
   created_at: string;
   updated_at: string;
 }

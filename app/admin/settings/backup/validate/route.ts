@@ -103,6 +103,12 @@ export async function POST(request: NextRequest) {
         skipExistingCount: plan.events.skipExistingCount,
         orphanCount: plan.events.orphanCount,
       },
+      publishQueue: {
+        toInsertCount: plan.publishQueue.toInsertCount,
+        toUpdateCount: plan.publishQueue.toUpdateCount,
+        conflictCount: plan.publishQueue.conflictCount,
+        unlinkedCount: plan.publishQueue.unlinkedCount,
+      },
       siteVerification: plan.siteVerification,
     },
   });

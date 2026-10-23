@@ -2,7 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
-import { isReservedSlug } from "@/lib/slug";
+import {
+  isValidLandingPageStatus,
+  validateDuplicateLandingPageInput,
+  validateFaqInput,
+  validateLandingPageInput,
+  validateSeoSettingsInput,
+} from "@/lib/landing-page-validation";
 import {
   deleteLandingPage,
   duplicateLandingPage,
@@ -35,163 +41,10 @@ import type {
   UpdateSeoSettingsInput,
 } from "@/types/seo";
 
-const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const VALID_STATUSES: LandingPageStatus[] = ["public", "private"];
-
-const SEO_TITLE_MAX_LENGTH = 120;
-const SEO_DESCRIPTION_MAX_LENGTH = 320;
-const BUSINESS_CATEGORY_MAX_LENGTH = 100;
-const SERVICE_AREA_MAX_LENGTH = 200;
-const FAQ_QUESTION_MAX_LENGTH = 200;
-const FAQ_ANSWER_MAX_LENGTH = 2000;
-
-const BUSINESS_NAME_MAX_LENGTH = 100;
-const TITLE_MAX_LENGTH = 100;
-const HERO_TEXT_MAX_LENGTH = 200;
-const DESCRIPTION_MAX_LENGTH = 2000;
-const PHONE_MAX_LENGTH = 30;
-const ADDRESS_MAX_LENGTH = 200;
-const KAKAO_URL_MAX_LENGTH = 500;
-
-/**
- * http/https만 허용한다(javascript:/data:/file: 등 위험한 스킴 차단).
- * open.kakao.com 등 특정 호스트를 강제하지 않는 이유는 카카오 채널/오픈채팅
- * URL 형태가 바뀔 수 있어, 정상적인 서비스 URL 변화에 대응하기 위해서다.
- */
-function isSafeExternalUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 /** SEO/FAQ 관련 화면에 영향을 주는 경로를 한 번에 갱신한다. */
 function revalidateSeoPaths(landingPageId: string, slug: string) {
   revalidatePath(`/admin/pages/${landingPageId}/edit`);
   revalidatePath(`/${slug}`);
-}
-
-interface NormalizedInput {
-  businessName: string;
-  title: string;
-  slug: string;
-  template: string;
-  heroText: string;
-  description: string;
-  phone: string;
-  kakaoUrl: string;
-  address: string;
-}
-
-function normalizeAndValidate(
-  input: CreateLandingPageInput | UpdateLandingPageInput
-): { normalized: NormalizedInput; error?: string } {
-  const businessName = input.businessName.trim();
-  const title = input.title.trim();
-  const slug = input.slug.trim().toLowerCase();
-  const template = input.template.trim();
-  const heroText = input.heroText.trim();
-  const description = input.description.trim();
-  const phone = input.phone.trim();
-  const kakaoUrl = input.kakaoUrl.trim();
-  const address = input.address.trim();
-
-  const normalized: NormalizedInput = {
-    businessName,
-    title,
-    slug,
-    template,
-    heroText,
-    description,
-    phone,
-    kakaoUrl,
-    address,
-  };
-
-  if (!businessName || !title || !slug || !template) {
-    return {
-      normalized,
-      error: "업체명, 페이지 제목, URL Slug, 템플릿은 필수 입력값입니다.",
-    };
-  }
-
-  if (!VALID_STATUSES.includes(input.status)) {
-    return { normalized, error: "공개 상태 값이 올바르지 않습니다." };
-  }
-
-  if (!SLUG_PATTERN.test(slug)) {
-    return {
-      normalized,
-      error:
-        "URL Slug는 영문 소문자, 숫자, 하이픈(-)만 사용할 수 있습니다. 예: a-gym",
-    };
-  }
-
-  if (isReservedSlug(slug)) {
-    return { normalized, error: "사용할 수 없는 URL입니다." };
-  }
-
-  if (businessName.length > BUSINESS_NAME_MAX_LENGTH) {
-    return {
-      normalized,
-      error: `업체명은 ${BUSINESS_NAME_MAX_LENGTH}자 이내로 입력해주세요.`,
-    };
-  }
-
-  if (title.length > TITLE_MAX_LENGTH) {
-    return {
-      normalized,
-      error: `페이지 제목은 ${TITLE_MAX_LENGTH}자 이내로 입력해주세요.`,
-    };
-  }
-
-  if (heroText.length > HERO_TEXT_MAX_LENGTH) {
-    return {
-      normalized,
-      error: `대표 문구는 ${HERO_TEXT_MAX_LENGTH}자 이내로 입력해주세요.`,
-    };
-  }
-
-  if (description.length > DESCRIPTION_MAX_LENGTH) {
-    return {
-      normalized,
-      error: `소개 문구는 ${DESCRIPTION_MAX_LENGTH}자 이내로 입력해주세요.`,
-    };
-  }
-
-  if (phone.length > PHONE_MAX_LENGTH) {
-    return {
-      normalized,
-      error: `전화번호는 ${PHONE_MAX_LENGTH}자 이내로 입력해주세요.`,
-    };
-  }
-
-  if (address.length > ADDRESS_MAX_LENGTH) {
-    return {
-      normalized,
-      error: `주소는 ${ADDRESS_MAX_LENGTH}자 이내로 입력해주세요.`,
-    };
-  }
-
-  if (kakaoUrl) {
-    if (kakaoUrl.length > KAKAO_URL_MAX_LENGTH) {
-      return {
-        normalized,
-        error: `카카오톡 URL은 ${KAKAO_URL_MAX_LENGTH}자 이내로 입력해주세요.`,
-      };
-    }
-    if (!isSafeExternalUrl(kakaoUrl)) {
-      return {
-        normalized,
-        error:
-          "카카오톡 URL은 http:// 또는 https://로 시작하는 주소만 입력할 수 있습니다.",
-      };
-    }
-  }
-
-  return { normalized };
 }
 
 export interface CreateLandingPageResult {
@@ -205,7 +58,7 @@ export async function createLandingPageAction(
 ): Promise<CreateLandingPageResult> {
   await requireUser();
 
-  const { normalized, error } = normalizeAndValidate(input);
+  const { normalized, error } = validateLandingPageInput(input);
 
   if (error) {
     return { success: false, error };
@@ -239,7 +92,7 @@ export async function updateLandingPageAction(
     return { success: false, error: "잘못된 요청입니다." };
   }
 
-  const { normalized, error } = normalizeAndValidate(input);
+  const { normalized, error } = validateLandingPageInput(input);
 
   if (error) {
     return { success: false, error };
@@ -297,7 +150,7 @@ export interface DuplicateLandingPageActionResult {
 
 /**
  * 원본 랜딩페이지를 새 row로 복제한다. 입력값 검증은 create/edit과 동일한
- * normalizeAndValidate 규칙(slug 패턴, 필수값, status)을 재사용한다.
+ * 규칙(lib/landing-page-validation.ts — slug 패턴, 필수값, status, 글자 수)을 쓴다.
  * 실제 복제(기본 데이터/SEO/FAQ 복사, consultation/Analytics 제외, rollback)는
  * lib/landing-pages.ts의 duplicateLandingPage가 담당한다.
  */
@@ -311,15 +164,7 @@ export async function duplicateLandingPageAction(
     return { success: false, error: "잘못된 요청입니다." };
   }
 
-  const { normalized, error } = normalizeAndValidate({
-    ...input,
-    heroText: "",
-    description: "",
-    phone: "",
-    kakaoUrl: "",
-    address: "",
-    template: "template-a",
-  });
+  const { normalized, error } = validateDuplicateLandingPageInput(input);
 
   if (error) {
     return { success: false, error };
@@ -355,7 +200,7 @@ export async function toggleLandingPageStatusAction(
     return { success: false, error: "잘못된 요청입니다." };
   }
 
-  if (!VALID_STATUSES.includes(status)) {
+  if (!isValidLandingPageStatus(status)) {
     return { success: false, error: "공개 상태 값이 올바르지 않습니다." };
   }
 
@@ -417,38 +262,6 @@ export async function updateLandingPageImageAction(
 export interface UpdateSeoSettingsResult {
   success: boolean;
   error?: string;
-}
-
-function validateSeoSettingsInput(
-  input: UpdateSeoSettingsInput
-): { error?: string } {
-  if (input.seoTitle.trim().length > SEO_TITLE_MAX_LENGTH) {
-    return { error: `SEO 제목은 ${SEO_TITLE_MAX_LENGTH}자 이내로 입력해주세요.` };
-  }
-  if (input.ogTitle.trim().length > SEO_TITLE_MAX_LENGTH) {
-    return { error: `OG 제목은 ${SEO_TITLE_MAX_LENGTH}자 이내로 입력해주세요.` };
-  }
-  if (input.seoDescription.trim().length > SEO_DESCRIPTION_MAX_LENGTH) {
-    return {
-      error: `SEO 설명은 ${SEO_DESCRIPTION_MAX_LENGTH}자 이내로 입력해주세요.`,
-    };
-  }
-  if (input.ogDescription.trim().length > SEO_DESCRIPTION_MAX_LENGTH) {
-    return {
-      error: `OG 설명은 ${SEO_DESCRIPTION_MAX_LENGTH}자 이내로 입력해주세요.`,
-    };
-  }
-  if (input.businessCategory.trim().length > BUSINESS_CATEGORY_MAX_LENGTH) {
-    return {
-      error: `업종/카테고리는 ${BUSINESS_CATEGORY_MAX_LENGTH}자 이내로 입력해주세요.`,
-    };
-  }
-  if (input.serviceArea.trim().length > SERVICE_AREA_MAX_LENGTH) {
-    return {
-      error: `서비스 지역은 ${SERVICE_AREA_MAX_LENGTH}자 이내로 입력해주세요.`,
-    };
-  }
-  return {};
 }
 
 /**
@@ -541,22 +354,6 @@ export interface FaqActionResult {
   success: boolean;
   error?: string;
   id?: string;
-}
-
-function validateFaqInput(input: CreateFaqInput): { error?: string } {
-  const question = input.question.trim();
-  const answer = input.answer.trim();
-
-  if (!question || !answer) {
-    return { error: "질문과 답변을 모두 입력해주세요." };
-  }
-  if (question.length > FAQ_QUESTION_MAX_LENGTH) {
-    return { error: `질문은 ${FAQ_QUESTION_MAX_LENGTH}자 이내로 입력해주세요.` };
-  }
-  if (answer.length > FAQ_ANSWER_MAX_LENGTH) {
-    return { error: `답변은 ${FAQ_ANSWER_MAX_LENGTH}자 이내로 입력해주세요.` };
-  }
-  return {};
 }
 
 export async function createFaqAction(

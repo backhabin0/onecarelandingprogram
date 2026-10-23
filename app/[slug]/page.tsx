@@ -4,6 +4,7 @@ import { getCachedPublicLandingPageBySlug } from "@/lib/landing-pages";
 import { buildLandingPageMetadata } from "@/lib/seo";
 import { resolveLandingPageSeo } from "@/lib/seo-resolver";
 import { resolveLandingPageFaqs } from "@/lib/faq-resolver";
+import { getRelatedLinks } from "@/lib/local-pages";
 import LandingPageRenderer from "@/components/landing/LandingPageRenderer";
 
 // 고객용 페이지는 관리자가 상태/내용/템플릿/SEO/FAQ를 바꾸는 즉시 반영되어야
@@ -49,12 +50,15 @@ export default async function PublicLandingPage({
     faqs,
     seoSettings?.disable_auto_faq ?? false
   );
+  // 7단계: 같은 지역 다른 서비스 / 근처 지역 같은 서비스 / 지역 모음 링크
+  const related = await getRelatedLinks(landingPage);
 
   return (
     <LandingPageRenderer
       landingPage={landingPage}
       resolvedSeo={resolvedSeo}
       faqs={resolvedFaqs}
+      related={related}
     />
   );
 }

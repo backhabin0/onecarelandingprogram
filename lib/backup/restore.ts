@@ -2,14 +2,32 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import { isReservedSlug } from "@/lib/slug";
-import type { LandingPage } from "@/types/landing-page";
 import type { LandingPageFaq, LandingPageSeoSettings } from "@/types/seo";
 import type { ConsultationRequest } from "@/types/consultation-request";
-import type { BackupEventRow, BackupFile } from "@/types/backup";
+import {
+  LANDING_PAGE_LOCAL_SEO_KEYS,
+  QUEUE_LOCAL_SEO_KEYS,
+  type BackupEventRow,
+  type BackupFile,
+  type BackupLandingPage,
+  type BackupQueueRow,
+} from "@/types/backup";
+
+/**
+ * 백업 행에 들어 있는 칸만 골라 담는다. 예전 형식 백업에는 그 칸이 없으므로
+ * 복구할 때 쓰지 않아 현재 DB 값이 유지된다(한 파일의 행은 모두 같은 형식).
+ */
+function presentKeys<K extends string>(row: Partial<Record<K, unknown>>, keys: readonly K[]) {
+  const picked: Partial<Record<K, unknown>> = {};
+  for (const key of keys) {
+    if (key in row) picked[key] = row[key];
+  }
+  return picked;
+}
 
 const WRITE_CHUNK_SIZE = 500;
-const ID_FETCH_PAGE_SIZE = 1000;
 
 function chunk<T>(items: T[], size: number): T[][] {
   const result: T[][] = [];
@@ -19,35 +37,34 @@ function chunk<T>(items: T[], size: number): T[][] {
   return result;
 }
 
-/** id(uuid) 컬럼 하나만 페이지네이션으로 전부 가져온다. 대량 데이터에도 안전하게 Set으로 반환한다. */
+/**
+ * id(uuid) 컬럼 하나만 1,000행씩 나눠 전부 가져온다(lib/supabase/fetch-all-rows.ts).
+ * 페이지 사이에 행이 빠지거나 중복되지 않도록 그 컬럼으로 정렬한다
+ * (id/landing_page_id/submission_id는 모두 유일 값). 대량 데이터에도 안전하게 Set으로 반환한다.
+ */
 async function fetchAllIds(
   supabase: SupabaseClient,
   table: string,
   column: string
 ): Promise<{ ids: Set<string>; error: string | null }> {
-  const ids = new Set<string>();
-  let from = 0;
-
-  for (;;) {
-    const { data, error } = await supabase
+  const { data, error } = await fetchAllRows<Record<string, string>>((from, to) =>
+    supabase
       .from(table)
       .select(column)
       .not(column, "is", null)
-      .range(from, from + ID_FETCH_PAGE_SIZE - 1);
+      .order(column, { ascending: true })
+      .range(from, to)
+  );
 
-    if (error) {
-      console.error(`[backup-restore] ${table}.${column} select error:`, error.message);
-      return { ids: new Set(), error: `${table} 현재 상태를 확인하지 못했습니다.` };
-    }
+  if (error) {
+    console.error(`[backup-restore] ${table}.${column} select error:`, error);
+    return { ids: new Set(), error: `${table} 현재 상태를 확인하지 못했습니다.` };
+  }
 
-    const page = (data ?? []) as unknown as Record<string, string>[];
-    for (const row of page) {
-      const value = row[column];
-      if (value) ids.add(value);
-    }
-
-    if (page.length < ID_FETCH_PAGE_SIZE) break;
-    from += ID_FETCH_PAGE_SIZE;
+  const ids = new Set<string>();
+  for (const row of data) {
+    const value = row[column];
+    if (value) ids.add(value);
   }
 
   return { ids, error: null };
@@ -61,7 +78,7 @@ export interface LandingPageConflict {
 
 export interface RestorePlan {
   landingPages: {
-    rowsToWrite: LandingPage[];
+    rowsToWrite: BackupLandingPage[];
     toInsertCount: number;
     toUpdateCount: number;
     conflicts: LandingPageConflict[];
@@ -89,6 +106,15 @@ export interface RestorePlan {
     rowsToInsert: BackupEventRow[];
     skipExistingCount: number;
     orphanCount: number;
+  };
+  publishQueue: {
+    rowsToWrite: BackupQueueRow[];
+    toInsertCount: number;
+    toUpdateCount: number;
+    /** slug 또는 (region, keyword)가 현재 다른 대기열 항목과 겹치거나 백업 안에서 겹쳐 건너뜀 */
+    conflictCount: number;
+    /** 연결된 랜딩페이지가 복구 후에도 없어서 landing_page_id를 비우고 쓰는 항목 */
+    unlinkedCount: number;
   };
   siteVerification: {
     willUpdate: boolean;
@@ -118,16 +144,23 @@ export async function computeRestorePlan(
   try {
     const supabase = await getSupabaseServerClient();
 
-    const { data: currentLandingPages, error: lpError } = await supabase
-      .from("landing_pages")
-      .select("id, slug");
+    // 1,000행 상한에 잘리면 slug 충돌을 놓치므로 끝까지 나눠 읽는다.
+    const { data: currentRows, error: lpError } = await fetchAllRows<{
+      id: string;
+      slug: string;
+    }>((from, to) =>
+      supabase
+        .from("landing_pages")
+        .select("id, slug")
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
 
     if (lpError) {
-      console.error("[backup-restore] landing_pages select error:", lpError.message);
+      console.error("[backup-restore] landing_pages select error:", lpError);
       return { plan: null, error: "현재 랜딩페이지 목록을 불러오지 못했습니다." };
     }
 
-    const currentRows = (currentLandingPages ?? []) as { id: string; slug: string }[];
     const currentIdSet = new Set(currentRows.map((r) => r.id));
     const currentSlugOwner = new Map(currentRows.map((r) => [r.slug, r.id] as const));
 
@@ -198,6 +231,13 @@ export async function computeRestorePlan(
             orphanCount: 0,
           },
           events: { rowsToInsert: [], skipExistingCount: 0, orphanCount: 0 },
+          publishQueue: {
+            rowsToWrite: [],
+            toInsertCount: 0,
+            toUpdateCount: 0,
+            conflictCount: 0,
+            unlinkedCount: 0,
+          },
           siteVerification: { willUpdate: false },
           canRestore: false,
           blockReason:
@@ -315,6 +355,13 @@ export async function computeRestorePlan(
       eventsToInsert.push(row);
     }
 
+    // --- publish queue(대기열, 백업 version 2부터): id 기준 upsert ---
+    // slug와 (region, keyword)는 대기열 안에서 유일해야 하므로, 현재 다른 항목이
+    // 쓰고 있거나 백업 안에서 겹치는 항목은 건너뛴다. 대기열은 공개 전 작업용
+    // 데이터라 랜딩페이지 충돌처럼 복구 전체를 막지는 않는다.
+    const queuePlan = await planPublishQueue(supabase, backup, resultingLandingPageIds);
+    if (queuePlan.error) return { plan: null, error: queuePlan.error };
+
     return {
       plan: {
         landingPages: {
@@ -347,6 +394,7 @@ export async function computeRestorePlan(
           skipExistingCount: eventSkipExisting,
           orphanCount: eventOrphan,
         },
+        publishQueue: queuePlan.plan,
         siteVerification: {
           willUpdate: backup.data.siteVerificationSettings !== null,
         },
@@ -359,12 +407,84 @@ export async function computeRestorePlan(
   }
 }
 
+async function planPublishQueue(
+  supabase: SupabaseClient,
+  backup: BackupFile,
+  resultingLandingPageIds: Set<string>
+): Promise<{ plan: RestorePlan["publishQueue"]; error: string | null }> {
+  const plan: RestorePlan["publishQueue"] = {
+    rowsToWrite: [],
+    toInsertCount: 0,
+    toUpdateCount: 0,
+    conflictCount: 0,
+    unlinkedCount: 0,
+  };
+  if (backup.data.publishQueue.length === 0) {
+    return { plan, error: null };
+  }
+
+  const { data: currentRows, error } = await fetchAllRows<{
+    id: string;
+    slug: string;
+    region: string;
+    keyword: string;
+  }>((from, to) =>
+    supabase
+      .from("landing_page_queue")
+      .select("id, slug, region, keyword")
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
+  if (error) {
+    console.error("[backup-restore] landing_page_queue select error:", error);
+    return { plan, error: "landing_page_queue 현재 상태를 확인하지 못했습니다." };
+  }
+
+  // JSON 배열 문자열은 구분자 충돌 없이 (region, keyword) 쌍을 하나의 키로 만든다.
+  const pairKey = (row: { region: string; keyword: string }) =>
+    JSON.stringify([row.region, row.keyword]);
+
+  const currentIds = new Set(currentRows.map((r) => r.id));
+  const slugOwner = new Map(currentRows.map((r) => [r.slug, r.id] as const));
+  const pairOwner = new Map(currentRows.map((r) => [pairKey(r), r.id] as const));
+
+  const slugCount = new Map<string, number>();
+  const pairCount = new Map<string, number>();
+  for (const row of backup.data.publishQueue) {
+    slugCount.set(row.slug, (slugCount.get(row.slug) ?? 0) + 1);
+    pairCount.set(pairKey(row), (pairCount.get(pairKey(row)) ?? 0) + 1);
+  }
+
+  for (const row of backup.data.publishQueue) {
+    const slugTaken = (slugOwner.get(row.slug) ?? row.id) !== row.id;
+    const pairTaken = (pairOwner.get(pairKey(row)) ?? row.id) !== row.id;
+    const duplicated =
+      (slugCount.get(row.slug) ?? 0) > 1 || (pairCount.get(pairKey(row)) ?? 0) > 1;
+    if (slugTaken || pairTaken || duplicated) {
+      plan.conflictCount += 1;
+      continue;
+    }
+
+    if (row.landing_page_id !== null && !resultingLandingPageIds.has(row.landing_page_id)) {
+      plan.unlinkedCount += 1;
+      plan.rowsToWrite.push({ ...row, landing_page_id: null });
+    } else {
+      plan.rowsToWrite.push(row);
+    }
+    if (currentIds.has(row.id)) plan.toUpdateCount += 1;
+    else plan.toInsertCount += 1;
+  }
+
+  return { plan, error: null };
+}
+
 export type RestorePhase =
   | "landing_pages"
   | "seo_settings"
   | "faqs"
   | "consultations"
   | "events"
+  | "publish_queue"
   | "site_verification";
 
 export interface RestoreExecutionResult {
@@ -381,6 +501,7 @@ export interface RestoreExecutionResult {
   faqs: { inserted: number; updated: number; orphan: number };
   consultations: { inserted: number; skipped: number; submissionConflicts: number; orphan: number };
   events: { inserted: number; skipped: number; orphan: number };
+  publishQueue: { inserted: number; updated: number; conflicts: number; unlinked: number };
   siteVerification: { updated: boolean };
 }
 
@@ -389,7 +510,7 @@ export interface RestoreExecutionResult {
  * (Route Handler)에서만 호출해야 한다.
  *
  * 순서: landing_pages → seo_settings → faqs → consultations → events →
- * site_verification_settings. 각 단계는 upsert/insert를 청크 단위로 나눠
+ * landing_page_queue → site_verification_settings. 각 단계는 upsert/insert를 청크 단위로 나눠
  * 호출하고, 어느 단계에서든 예상치 못한 DB 오류가 나면 그 즉시 멈추고
  * "partial_failure"를 반환한다(이미 반영된 이전 단계까지 되돌리는 자동
  * rollback은 없다 — 이 프로젝트에 트랜잭션 인프라가 없으므로, 실패 시
@@ -405,6 +526,7 @@ export async function executeMergeRestore(
     faqs: { inserted: 0, updated: 0, orphan: 0 },
     consultations: { inserted: 0, skipped: 0, submissionConflicts: 0, orphan: 0 },
     events: { inserted: 0, skipped: 0, orphan: 0 },
+    publishQueue: { inserted: 0, updated: 0, conflicts: 0, unlinked: 0 },
     siteVerification: { updated: false },
   });
 
@@ -449,6 +571,10 @@ export async function executeMergeRestore(
             main_image_url: r.main_image_url,
             template: r.template,
             status: r.status,
+            // version 1 백업에는 published_at이 없다 → 쓰지 않아 현재 값을 유지한다.
+            // (한 파일 안의 행은 모두 같은 version이라 청크 안에서 키가 섞이지 않는다)
+            ...("published_at" in r ? { published_at: r.published_at } : {}),
+            ...presentKeys(r, LANDING_PAGE_LOCAL_SEO_KEYS),
             created_at: r.created_at,
             updated_at: r.updated_at,
           })),
@@ -573,7 +699,56 @@ export async function executeMergeRestore(
     result.events.skipped = plan.events.skipExistingCount;
     result.events.orphan = plan.events.orphanCount;
 
-    // 6) site_verification_settings — singleton row 갱신.
+    // 6) publish queue(대기열) — id 기준 upsert. 충돌 항목은 plan 단계에서 이미 제외됨.
+    for (const rows of chunk(plan.publishQueue.rowsToWrite, WRITE_CHUNK_SIZE)) {
+      const { error } = await supabase.from("landing_page_queue").upsert(
+        rows.map((r) => ({
+          id: r.id,
+          region: r.region,
+          keyword: r.keyword,
+          region_slug: r.region_slug,
+          keyword_slug: r.keyword_slug,
+          business_name: r.business_name,
+          title: r.title,
+          slug: r.slug,
+          hero_text: r.hero_text,
+          description: r.description,
+          phone: r.phone,
+          kakao_url: r.kakao_url,
+          address: r.address,
+          template: r.template,
+          seo_title: r.seo_title,
+          seo_description: r.seo_description,
+          service_area: r.service_area,
+          business_category: r.business_category,
+          faqs: r.faqs,
+          source: r.source,
+          state: r.state,
+          validation_errors: r.validation_errors,
+          max_similarity: r.max_similarity,
+          priority: r.priority,
+          published_at: r.published_at,
+          landing_page_id: r.landing_page_id,
+          batch_id: r.batch_id,
+          ...presentKeys(r, QUEUE_LOCAL_SEO_KEYS),
+          created_at: r.created_at,
+        })),
+        { onConflict: "id" }
+      );
+      if (error) {
+        console.error("[backup-restore] landing_page_queue upsert error:", error.message);
+        result.status = "partial_failure";
+        result.failedPhase = "publish_queue";
+        result.error = "대기열 복구 중 오류가 발생했습니다.";
+        return result;
+      }
+    }
+    result.publishQueue.inserted = plan.publishQueue.toInsertCount;
+    result.publishQueue.updated = plan.publishQueue.toUpdateCount;
+    result.publishQueue.conflicts = plan.publishQueue.conflictCount;
+    result.publishQueue.unlinked = plan.publishQueue.unlinkedCount;
+
+    // 7) site_verification_settings — singleton row 갱신.
     if (backup.data.siteVerificationSettings) {
       const { error } = await supabase
         .from("site_verification_settings")

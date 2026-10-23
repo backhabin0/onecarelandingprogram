@@ -5,6 +5,8 @@ interface PaginationProps {
   totalPages: number;
   /** page를 제외한 현재 검색/필터/정렬 조건 (URLSearchParams용) */
   baseParams: Record<string, string>;
+  /** 링크 대상 경로. 생략하면 기존 동작대로 상담 목록(/admin/consultations)을 가리킨다. */
+  basePath?: string;
 }
 
 const linkClassName =
@@ -12,14 +14,19 @@ const linkClassName =
 const disabledClassName =
   "cursor-not-allowed rounded-md border border-slate-100 px-3 py-1.5 text-slate-300";
 
-export default function Pagination({ page, totalPages, baseParams }: PaginationProps) {
+export default function Pagination({
+  page,
+  totalPages,
+  baseParams,
+  basePath = "/admin/consultations",
+}: PaginationProps) {
   const buildHref = (targetPage: number) => {
     const params = new URLSearchParams(baseParams);
     if (targetPage > 1) {
       params.set("page", String(targetPage));
     }
     const query = params.toString();
-    return `/admin/consultations${query ? `?${query}` : ""}`;
+    return `${basePath}${query ? `?${query}` : ""}`;
   };
 
   return (

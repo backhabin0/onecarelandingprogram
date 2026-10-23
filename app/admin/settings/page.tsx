@@ -2,13 +2,31 @@ import Link from "next/link";
 import PageHeader from "@/components/admin/PageHeader";
 import Card from "@/components/admin/Card";
 import SiteVerificationSettingsPanel from "@/components/admin/SiteVerificationSettingsPanel";
+import SimilaritySettingsPanel from "@/components/admin/SimilaritySettingsPanel";
 import { getSiteVerificationSettings } from "@/lib/site-verification";
+import { getSimilarityThresholds } from "@/lib/bulk-publish-settings";
+import AutoPublishSettingsPanel from "@/components/admin/AutoPublishSettingsPanel";
+import {
+  DAILY_LIMIT_MAX,
+  DAILY_LIMIT_MIN,
+  getAutoPublishSettings,
+  getRecentPublishRuns,
+} from "@/lib/auto-publish";
+import { getIndexNowStatus } from "@/lib/indexnow";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 // 저장 직후 다음 요청부터 최신 DB 값을 보여줘야 하므로 캐시하지 않는다.
 export const dynamic = "force-dynamic";
 
 export default async function AdminSettingsPage() {
-  const siteVerification = await getSiteVerificationSettings();
+  const supabase = await getSupabaseServerClient();
+  const [siteVerification, similarity, autoPublish, runs, indexNow] = await Promise.all([
+    getSiteVerificationSettings(),
+    getSimilarityThresholds(),
+    getAutoPublishSettings(),
+    getRecentPublishRuns(10),
+    getIndexNowStatus(supabase),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -18,6 +36,26 @@ export default async function AdminSettingsPage() {
       />
 
       <SiteVerificationSettingsPanel initialSettings={siteVerification} />
+
+      <SimilaritySettingsPanel
+        initialThresholds={similarity.thresholds}
+        loadError={similarity.error}
+      />
+
+      <AutoPublishSettingsPanel
+        enabled={autoPublish.data.enabled}
+        dailyLimit={autoPublish.data.dailyLimit}
+        noindexThinPages={autoPublish.data.noindexThinPages}
+        limitRange={{ min: DAILY_LIMIT_MIN, max: DAILY_LIMIT_MAX }}
+        runs={runs.data}
+        indexNow={{
+          configured: indexNow.config.ok,
+          detail: indexNow.config.ok ? indexNow.config.keyLocation : indexNow.config.reason,
+          pendingCount: indexNow.pendingCount,
+          recent: indexNow.recent,
+        }}
+        loadError={autoPublish.error ?? runs.error ?? indexNow.error}
+      />
 
       <Card className="p-6">
         <h2 className="text-base font-semibold text-slate-900">백업 및 복구</h2>

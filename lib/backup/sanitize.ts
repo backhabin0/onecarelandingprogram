@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { LandingPage, LandingPageStatus } from "@/types/landing-page";
+import type { LandingPageStatus } from "@/types/landing-page";
 import type { LandingPageFaq, LandingPageSeoSettings } from "@/types/seo";
 import type {
   ConsultationRequest,
@@ -8,11 +8,22 @@ import type {
 } from "@/types/consultation-request";
 import type { LandingPageEventType } from "@/types/analytics";
 import {
+  LANDING_PAGE_QUEUE_SOURCES,
+  LANDING_PAGE_QUEUE_STATES,
+  type LandingPageQueueFaq,
+  type LandingPageQueueSource,
+  type LandingPageQueueState,
+} from "@/types/publish-queue";
+import {
   BACKUP_FORMAT,
-  BACKUP_VERSION,
+  SUPPORTED_BACKUP_VERSIONS,
   type BackupData,
   type BackupEventRow,
   type BackupFile,
+  type BackupLandingPage,
+  type BackupQueueRow,
+  LANDING_PAGE_LOCAL_SEO_KEYS,
+  QUEUE_LOCAL_SEO_KEYS,
   type BackupSiteVerificationSettings,
   type BackupStorageManifestEntry,
 } from "@/types/backup";
@@ -57,7 +68,12 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function sanitizeLandingPage(item: unknown): LandingPage | null {
+/**
+ * version 2부터는 published_at이 반드시 있어야 한다(null 또는 날짜).
+ * version 1 파일에는 이 키가 없으므로 결과에도 넣지 않는다 — 복구할 때
+ * published_at을 쓰지 않아 현재 DB 값이 유지된다.
+ */
+function sanitizeLandingPage(item: unknown, version: number): BackupLandingPage | null {
   if (!isPlainRecord(item)) return null;
   const r = item;
 
@@ -82,9 +98,15 @@ function sanitizeLandingPage(item: unknown): LandingPage | null {
     return null;
   }
 
+  if (version >= 2 && r.published_at !== null && !isIsoDateString(r.published_at)) {
+    return null;
+  }
+  const localSeo = pickNullableStrings(r, LANDING_PAGE_LOCAL_SEO_KEYS, version >= 3);
+  if (!localSeo) return null;
+
   const status: LandingPageStatus = r.status;
 
-  return {
+  const page: BackupLandingPage = {
     id: r.id,
     business_name: r.business_name,
     title: r.title,
@@ -101,6 +123,10 @@ function sanitizeLandingPage(item: unknown): LandingPage | null {
     created_at: r.created_at,
     updated_at: r.updated_at,
   };
+  if (version >= 2) {
+    page.published_at = r.published_at as string | null;
+  }
+  return { ...page, ...localSeo };
 }
 
 function sanitizeSeoSettings(item: unknown): LandingPageSeoSettings | null {
@@ -269,6 +295,138 @@ function sanitizeStorageManifestEntry(
   };
 }
 
+function sanitizeQueueFaqs(value: unknown): LandingPageQueueFaq[] | null {
+  if (!Array.isArray(value)) return null;
+  const faqs: LandingPageQueueFaq[] = [];
+  for (const item of value) {
+    if (!isPlainRecord(item) || !isString(item.question) || !isString(item.answer)) {
+      return null;
+    }
+    faqs.push({ question: item.question, answer: item.answer });
+  }
+  return faqs;
+}
+
+/**
+ * version 3 이상이면 keys가 모두 문자열 또는 null이어야 하고(아니면 null 반환), 그 값만
+ * 새 객체에 담는다. 그보다 예전 형식이면 빈 객체 — 복구 때 그 칸을 쓰지 않게 한다.
+ */
+function pickNullableStrings<K extends string>(
+  r: Record<string, unknown>,
+  keys: readonly K[],
+  required: boolean
+): Partial<Record<K, string | null>> | null {
+  const picked: Partial<Record<K, string | null>> = {};
+  if (!required) return picked;
+  for (const key of keys) {
+    const value = r[key];
+    if (!isNullableString(value)) return null;
+    picked[key] = value;
+  }
+  return picked;
+}
+
+function sanitizeQueueRow(item: unknown, version: number): BackupQueueRow | null {
+  if (!isPlainRecord(item)) return null;
+  const r = item;
+  const localSeo = pickNullableStrings(r, QUEUE_LOCAL_SEO_KEYS, version >= 3);
+  if (!localSeo) return null;
+
+  if (!isUuid(r.id)) return null;
+  if (
+    !isString(r.region) ||
+    !isString(r.keyword) ||
+    !isString(r.region_slug) ||
+    !isString(r.keyword_slug) ||
+    !isString(r.business_name) ||
+    !isString(r.title) ||
+    !isString(r.slug) ||
+    !isString(r.template)
+  ) {
+    return null;
+  }
+  if (
+    !isNullableString(r.hero_text) ||
+    !isNullableString(r.description) ||
+    !isNullableString(r.phone) ||
+    !isNullableString(r.kakao_url) ||
+    !isNullableString(r.address) ||
+    !isNullableString(r.seo_title) ||
+    !isNullableString(r.seo_description) ||
+    !isNullableString(r.service_area) ||
+    !isNullableString(r.business_category)
+  ) {
+    return null;
+  }
+  const faqs = sanitizeQueueFaqs(r.faqs);
+  if (!faqs) return null;
+  if (
+    typeof r.source !== "string" ||
+    !(LANDING_PAGE_QUEUE_SOURCES as readonly string[]).includes(r.source)
+  ) {
+    return null;
+  }
+  if (
+    typeof r.state !== "string" ||
+    !(LANDING_PAGE_QUEUE_STATES as readonly string[]).includes(r.state)
+  ) {
+    return null;
+  }
+  if (!Array.isArray(r.validation_errors)) return null;
+
+  // numeric 컬럼은 문자열로 올 수도 있어 숫자로 바꿔 받는다.
+  const maxSimilarity =
+    r.max_similarity === null
+      ? null
+      : typeof r.max_similarity === "string"
+        ? Number(r.max_similarity)
+        : r.max_similarity;
+  if (
+    maxSimilarity !== null &&
+    (!isFiniteNumber(maxSimilarity) || maxSimilarity < 0 || maxSimilarity > 1)
+  ) {
+    return null;
+  }
+  if (!isFiniteNumber(r.priority) || !Number.isInteger(r.priority)) return null;
+  if (r.published_at !== null && !isIsoDateString(r.published_at)) return null;
+  if (r.landing_page_id !== null && !isUuid(r.landing_page_id)) return null;
+  if (r.batch_id !== null && !isUuid(r.batch_id)) return null;
+  if (!isIsoDateString(r.created_at)) return null;
+
+  return {
+    id: r.id,
+    region: r.region,
+    keyword: r.keyword,
+    region_slug: r.region_slug,
+    keyword_slug: r.keyword_slug,
+    business_name: r.business_name,
+    title: r.title,
+    slug: r.slug,
+    hero_text: r.hero_text,
+    description: r.description,
+    phone: r.phone,
+    kakao_url: r.kakao_url,
+    address: r.address,
+    template: r.template,
+    seo_title: r.seo_title,
+    seo_description: r.seo_description,
+    service_area: r.service_area,
+    business_category: r.business_category,
+    faqs,
+    source: r.source as LandingPageQueueSource,
+    state: r.state as LandingPageQueueState,
+    // jsonb에 그대로 저장되는 값이라 구조를 바꾸지 않고, JSON으로 다시 만들어 복사한다.
+    validation_errors: JSON.parse(JSON.stringify(r.validation_errors)) as unknown[],
+    max_similarity: maxSimilarity,
+    priority: r.priority,
+    published_at: r.published_at,
+    landing_page_id: r.landing_page_id,
+    batch_id: r.batch_id,
+    created_at: r.created_at,
+    ...localSeo,
+  };
+}
+
 function sanitizeArray<T>(
   value: unknown,
   sanitizer: (item: unknown) => T | null
@@ -317,7 +475,8 @@ export function parseAndValidateBackupFile(rawText: string): ParseBackupResult {
     return { success: false, error: "지원하지 않는 백업 파일입니다." };
   }
 
-  if (parsed.version !== BACKUP_VERSION) {
+  const version = parsed.version;
+  if (typeof version !== "number" || !SUPPORTED_BACKUP_VERSIONS.includes(version)) {
     return {
       success: false,
       error: `지원하지 않는 백업 버전입니다. (version: ${String(parsed.version)})`,
@@ -331,7 +490,9 @@ export function parseAndValidateBackupFile(rawText: string): ParseBackupResult {
   const data = parsed.data;
   const invalidCounts: Partial<Record<keyof BackupData, number>> = {};
 
-  const landingPages = sanitizeArray(data.landingPages, sanitizeLandingPage);
+  const landingPages = sanitizeArray(data.landingPages, (item) =>
+    sanitizeLandingPage(item, version)
+  );
   const seoSettings = sanitizeArray(data.seoSettings, sanitizeSeoSettings);
   const faqs = sanitizeArray(data.faqs, sanitizeFaq);
   const consultations = sanitizeArray(data.consultations, sanitizeConsultation);
@@ -340,16 +501,22 @@ export function parseAndValidateBackupFile(rawText: string): ParseBackupResult {
     data.storageManifest,
     sanitizeStorageManifestEntry
   );
+  // 대기열은 version 2부터 들어 있다.
+  const publishQueue =
+    version >= 2
+      ? sanitizeArray(data.publishQueue, (item) => sanitizeQueueRow(item, version))
+      : { rows: [], invalid: 0 };
 
   if (landingPages.invalid > 0) invalidCounts.landingPages = landingPages.invalid;
   if (seoSettings.invalid > 0) invalidCounts.seoSettings = seoSettings.invalid;
   if (faqs.invalid > 0) invalidCounts.faqs = faqs.invalid;
   if (consultations.invalid > 0) invalidCounts.consultations = consultations.invalid;
   if (events.invalid > 0) invalidCounts.events = events.invalid;
+  if (publishQueue.invalid > 0) invalidCounts.publishQueue = publishQueue.invalid;
 
   const backup: BackupFile = {
     format: BACKUP_FORMAT,
-    version: BACKUP_VERSION,
+    version,
     exportedAt: isString(parsed.exportedAt) ? parsed.exportedAt : "",
     site: isString(parsed.site) ? parsed.site : "",
     counts: {
@@ -358,6 +525,7 @@ export function parseAndValidateBackupFile(rawText: string): ParseBackupResult {
       faqs: faqs.rows.length,
       consultations: consultations.rows.length,
       events: events.rows.length,
+      publishQueue: publishQueue.rows.length,
     },
     data: {
       landingPages: landingPages.rows,
@@ -369,6 +537,7 @@ export function parseAndValidateBackupFile(rawText: string): ParseBackupResult {
         data.siteVerificationSettings
       ),
       storageManifest: storageManifest.rows,
+      publishQueue: publishQueue.rows,
     },
   };
 

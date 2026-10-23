@@ -7,10 +7,20 @@ import CTAButtons from "@/components/landing/CTAButtons";
 import ConsultationForm from "@/components/landing/ConsultationForm";
 import FAQSection from "@/components/landing/FAQSection";
 import SafeImage from "@/components/landing/SafeImage";
+import { Breadcrumbs, CaseStudySection, RelatedLinksSection } from "@/components/landing/LocalSeoSections";
+import type { BreadcrumbItem, RelatedLinks } from "@/lib/local-seo";
 
 interface TemplateBProps {
   landingPage: LandingPage;
   faqs: ResolvedFaq[];
+  /** H1(페이지에 1개). 지역·키워드가 앞쪽에 오도록 다듬은 제목 */
+  headline: string;
+  /** 대표 사진 alt */
+  imageAlt: string;
+  /** 화면 상단 경로(홈 > 시/군 > 페이지) */
+  breadcrumbs: BreadcrumbItem[];
+  /** 하단 내부 링크(공개 페이지에서만) */
+  related: RelatedLinks | null;
   /** true면 Analytics 기록/상담 제출을 막는다(관리자 미리보기). 시각적 레이아웃은 동일하다. */
   preview?: boolean;
 }
@@ -23,11 +33,14 @@ interface TemplateBProps {
 export default function TemplateB({
   landingPage,
   faqs,
+  headline,
+  imageAlt,
+  breadcrumbs,
+  related,
   preview = false,
 }: TemplateBProps) {
   const {
     business_name: businessName,
-    title,
     hero_text: heroText,
     description,
     phone,
@@ -42,12 +55,18 @@ export default function TemplateB({
       <LandingHeader businessName={businessName} logoUrl={logoUrl} />
 
       <main className="flex-1">
+        <div className="bg-slate-900">
+          <Breadcrumbs items={breadcrumbs} variant="dark" />
+        </div>
         <section className="relative overflow-hidden bg-slate-900">
           {mainImageUrl ? (
             <SafeImage
               src={mainImageUrl}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover opacity-50"
+              alt={imageAlt}
+              wrapperClassName="absolute inset-0"
+              className="object-cover opacity-50"
+              sizes="100vw"
+              highPriority
             />
           ) : null}
           <div className="relative mx-auto flex max-w-3xl flex-col items-start gap-6 px-5 py-16 sm:py-24 lg:py-28">
@@ -55,7 +74,7 @@ export default function TemplateB({
               지금 바로 신청하세요
             </span>
             <h1 className="text-4xl font-extrabold leading-tight text-white sm:text-5xl lg:text-6xl">
-              {title}
+              {headline}
             </h1>
             <CTAButtons
               phone={phone}
@@ -89,6 +108,8 @@ export default function TemplateB({
             </div>
           </section>
         ) : null}
+
+        <CaseStudySection caseStudy={landingPage.case_study} variant="dark" />
 
         <BusinessInfoSection
           businessName={businessName}
@@ -132,6 +153,7 @@ export default function TemplateB({
         </section>
 
         <FAQSection faqs={faqs} variant="dark" />
+        <RelatedLinksSection links={related} variant="dark" />
       </main>
 
       <LandingFooter businessName={businessName} />
