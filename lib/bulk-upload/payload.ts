@@ -67,7 +67,7 @@ export function sanitizeUploadPayload(input: unknown, maxRows = ENQUEUE_CHUNK_MA
   for (const item of input) {
     if (!isRecord(item) || !isRecord(item.values)) return null;
     const rowNumber = item.rowNumber;
-    if (typeof rowNumber !== "number" || !Number.isInteger(rowNumber) || rowNumber < 2) return null;
+    if (typeof rowNumber !== "number" || !Number.isInteger(rowNumber) || rowNumber < 1) return null;
     if (seenRowNumbers.has(rowNumber)) return null;
     seenRowNumbers.add(rowNumber);
 

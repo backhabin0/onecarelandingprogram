@@ -86,6 +86,54 @@ export const SIMILARITY_ERROR_CODE = "similarity_too_high";
 const SIMILARITY_WARNING_CODE = "similarity_high";
 
 const KNOWN_TEMPLATES = mockTemplates.map((t) => t.id);
+
+/**
+ * 소개 문구·FAQ에 들어 있으면 경고하는 사실 정보 패턴. AI가 지어낸 연락처·가격일
+ * 수 있어 사람이 확인하게 한다(저장은 막지 않음 — 실제 업체 정보일 수도 있으므로).
+ * - 전화번호: 010-1234-5678, 02)123-4567, 02 123 4567, 01012345678, 1588-1234, +82 10-...
+ * - 금액·할인: 50,000원, 3만원, 5천 원, 1억, ₩10000, 30% 할인
+ */
+const PHONE_PATTERN =
+  /\b0\d{1,2}[-.)\s]\s?\d{3,4}[-.\s]\d{4}\b|\+82[-\s]?0?\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4}\b|\b01[016789]\d{7,8}\b|\b1[5-9]\d{2}-\d{4}\b/;
+const PRICE_PATTERN =
+  /\d[\d,]*(?:\.\d+)?\s*(?:만|천|백|억)?\s*원|\d[\d,]*\s*억|₩\s*\d|\d+(?:\.\d+)?\s*%\s*(?:할인|off|OFF|Off)/;
+
+const FACT_CHECK_FIELDS: { field: keyof UploadValues; label: string }[] = [
+  { field: "description", label: "소개 문구" },
+  ...([1, 2, 3] as const).flatMap((k) => [
+    { field: `faqQuestion${k}` as const, label: `FAQ 질문${k}` },
+    { field: `faqAnswer${k}` as const, label: `FAQ 답변${k}` },
+  ]),
+];
+
+/** 소개 문구·FAQ에 전화번호·금액 패턴이 있으면 경고 */
+export function collectFactWarnings(values: UploadValues): ValidationIssue[] {
+  const phoneFields: string[] = [];
+  const priceFields: string[] = [];
+  for (const { field, label } of FACT_CHECK_FIELDS) {
+    const text = values[field] ?? "";
+    if (PHONE_PATTERN.test(text)) phoneFields.push(label);
+    if (PRICE_PATTERN.test(text)) priceFields.push(label);
+  }
+  const fieldsOf = (labels: string[]) =>
+    FACT_CHECK_FIELDS.filter((f) => labels.includes(f.label)).map((f) => f.field);
+  const warnings: ValidationIssue[] = [];
+  if (phoneFields.length > 0) {
+    warnings.push({
+      code: "contains_phone",
+      fields: fieldsOf(phoneFields),
+      message: `${phoneFields.join(", ")}에 전화번호로 보이는 내용이 있습니다. AI가 지어낸 번호가 아닌지 확인해주세요.`,
+    });
+  }
+  if (priceFields.length > 0) {
+    warnings.push({
+      code: "contains_price",
+      fields: fieldsOf(priceFields),
+      message: `${priceFields.join(", ")}에 가격·할인으로 보이는 내용이 있습니다. 실제 정보인지 확인해주세요.`,
+    });
+  }
+  return warnings;
+}
 const FAQ_INDEXES = [1, 2, 3] as const;
 
 const v = (values: UploadValues, key: keyof UploadValues) => (values[key] ?? "").trim();
@@ -224,6 +272,7 @@ export function checkBulkUploadRows(
     }
 
     const faqs = collectFaqs(values, errors);
+    warnings.push(...collectFactWarnings(values));
 
     const region = v(values, "region");
     const keyword = v(values, "keyword");

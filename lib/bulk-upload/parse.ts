@@ -122,7 +122,13 @@ function cellToString(value: unknown): { text: string; wasNumber: boolean } {
  * 첫 줄을 머리글로 보고 나머지 줄을 행으로 바꾼다. 모든 칸이 빈 줄은 건너뛴다
  * (줄 번호는 원래 파일 기준을 유지). 필수 머리글이 없거나 중복이면 fileErrors.
  */
-export function sheetToUploadRows(table: readonly (readonly unknown[])[]): ParsedUpload {
+export function sheetToUploadRows(
+  table: readonly (readonly unknown[])[],
+  options: { rowNumberOffset?: number } = {}
+): ParsedUpload {
+  // 머리글 없이 붙여넣은 표는 양식 머리글을 앞에 붙여 읽으므로, 줄 번호를 한 칸 당겨
+  // 사용자가 붙여넣은 줄 번호와 맞춘다(rowNumberOffset = -1).
+  const offset = options.rowNumberOffset ?? 0;
   const result: ParsedUpload = { rows: [], fileErrors: [], ignoredHeaders: [], blankRowCount: 0 };
 
   if (table.length === 0 || table[0].every((cell) => cellToString(cell).text === "")) {
@@ -181,7 +187,7 @@ export function sheetToUploadRows(table: readonly (readonly unknown[])[]): Parse
       result.blankRowCount += 1;
       continue;
     }
-    result.rows.push({ rowNumber: r + 1, values, warnings });
+    result.rows.push({ rowNumber: r + 1 + offset, values, warnings });
   }
 
   if (result.rows.length === 0) {
@@ -193,6 +199,74 @@ export function sheetToUploadRows(table: readonly (readonly unknown[])[]): Parse
   }
 
   return result;
+}
+
+// ------------------------------------------------------------
+// 붙여넣기(AI가 준 표)
+// ------------------------------------------------------------
+
+const MARKDOWN_SEPARATOR = /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?$/;
+
+/**
+ * 붙여넣은 표 텍스트를 칸 목록으로 바꾼다.
+ * - 기본은 탭 구분(엑셀·구글 시트에서 복사하거나 AI가 탭으로 준 표)
+ * - AI가 지시와 달리 마크다운 표(| a | b |)로 주면 그것도 읽는다(구분선 줄은 건너뜀)
+ * - 코드 블록 표시(```) 줄은 건너뛴다
+ * 칸 안의 줄바꿈은 지원하지 않는다(한 줄 = 한 행).
+ */
+export function parsePastedTable(text: string): string[][] {
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
+  const rows: string[][] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("```")) continue;
+    if (trimmed.startsWith("|")) {
+      if (MARKDOWN_SEPARATOR.test(trimmed)) continue;
+      const inner = trimmed.replace(/^\|/, "").replace(/\|$/, "");
+      rows.push(inner.split("|").map((cell) => cell.trim()));
+      continue;
+    }
+    rows.push(line.split("\t"));
+  }
+  return rows;
+}
+
+/** 첫 줄이 머리글인지: 양식 머리글이 3개 이상 들어 있으면 머리글로 본다 */
+function looksLikeHeader(row: readonly unknown[]): boolean {
+  let matches = 0;
+  for (const cell of row) {
+    if (typeof cell === "string" && HEADER_TO_FIELD.has(normalizeHeader(cell))) matches += 1;
+  }
+  return matches >= 3;
+}
+
+/**
+ * 붙여넣은 표를 행으로 바꾼다. 엑셀 업로드와 같은 규칙(sheetToUploadRows)을 쓴다.
+ * 첫 줄이 머리글이 아니면 양식 열 순서 그대로라고 보고 양식 머리글을 붙여 읽는다.
+ * 줄 번호는 붙여넣은 텍스트의 줄 번호(마크다운 구분선·코드 블록 줄 제외 후)다.
+ */
+export function parsePastedUpload(text: string): ParsedUpload {
+  const table = parsePastedTable(text);
+  // 앞쪽 빈 줄은 머리글 판단 전에 건너뛴다.
+  while (table.length > 0 && table[0].every((cell) => cell.trim() === "")) table.shift();
+
+  if (table.length === 0) {
+    return { rows: [], fileErrors: ["붙여넣은 내용이 없습니다."], ignoredHeaders: [], blankRowCount: 0 };
+  }
+  if (looksLikeHeader(table[0])) {
+    return sheetToUploadRows(table);
+  }
+  if (table[0].length > BULK_UPLOAD_COLUMNS.length) {
+    return {
+      rows: [],
+      fileErrors: [
+        `머리글이 없고 칸 수(${table[0].length})가 양식(${BULK_UPLOAD_COLUMNS.length}칸)보다 많습니다. 머리글을 포함해 붙여넣어 주세요.`,
+      ],
+      ignoredHeaders: [],
+      blankRowCount: 0,
+    };
+  }
+  return sheetToUploadRows([BULK_UPLOAD_COLUMNS.map((c) => c.header), ...table], { rowNumberOffset: -1 });
 }
 
 /** 확장자로 xlsx/csv를 구분해 읽는다. 그 밖의 형식은 fileErrors로 돌려준다. */

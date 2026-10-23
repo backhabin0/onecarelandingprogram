@@ -97,7 +97,9 @@ export type ValidationIssueCode =
   | "pair_in_queue"
   | "similarity_too_high"
   | "similarity_high"
-  | "phone_number_cell";
+  | "phone_number_cell"
+  | "contains_phone"
+  | "contains_price";
 
 export interface ValidationIssue {
   code: ValidationIssueCode;

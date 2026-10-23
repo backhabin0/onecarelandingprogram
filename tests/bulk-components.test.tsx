@@ -23,6 +23,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const { default: AdminSidebar } = await import("@/components/admin/AdminSidebar");
 const { default: BulkCheckResultTable } = await import("@/components/admin/BulkCheckResultTable");
 const { default: BulkUploadPanel } = await import("@/components/admin/BulkUploadPanel");
+const { default: PromptBuilderPanel } = await import("@/components/admin/PromptBuilderPanel");
 const { default: QueueStateTabs } = await import("@/components/admin/QueueStateTabs");
 const { default: QueueTable } = await import("@/components/admin/QueueTable");
 const { default: QueueItemForm } = await import("@/components/admin/QueueItemForm");
@@ -142,11 +143,27 @@ describe("검사 결과 표", () => {
 });
 
 describe("대량 등록 화면", () => {
-  it("양식 다운로드 링크와 파일 선택(xlsx/csv)", () => {
+  it("양식 다운로드 링크, 파일 선택(xlsx/csv), 표 붙여넣기 칸", () => {
     const html = renderToStaticMarkup(<BulkUploadPanel />);
     expect(html).toContain('href="/admin/bulk/template"');
     expect(html).toContain('accept=".xlsx,.csv"');
     expect(text(html)).toContain("1. 파일 올리기");
+    expect(html).toContain('id="bulkPasteText"');
+    expect(text(html)).toContain("붙여넣은 표 검사");
+  });
+
+  it("프롬프트 만들기: 지역·키워드·업체 정보 입력과 안내(아직 입력 전)", () => {
+    const html = renderToStaticMarkup(<PromptBuilderPanel />);
+    const t = text(html);
+    expect(html).toContain('id="promptRegions"');
+    expect(html).toContain('id="promptKeywords"');
+    for (const id of ["promptBusinessName", "promptPhone", "promptKakao", "promptAddress", "promptTemplate", "promptIndustry"]) {
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(t).toContain("지역 0개 × 키워드 0개 = 0개 조합");
+    expect(t).toContain("지역과 키워드를 입력하면 프롬프트가 만들어집니다.");
+    // 이 화면은 AI를 직접 호출하지 않는다(서버 액션·외부 요청 없음)
+    expect(html).not.toMatch(/api\.anthropic|openai/i);
   });
 });
 

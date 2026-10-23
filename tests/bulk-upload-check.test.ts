@@ -314,7 +314,7 @@ describe("요청 나누기와 서버 입력 확인", () => {
     ]);
     expect(sanitizeUploadPayload([])).toBeNull();
     expect(sanitizeUploadPayload("x")).toBeNull();
-    expect(sanitizeUploadPayload([{ rowNumber: 1, values: {} }])).toBeNull(); // 머리글 줄 번호
+    expect(sanitizeUploadPayload([{ rowNumber: 0, values: {} }])).toBeNull();
     expect(sanitizeUploadPayload([{ rowNumber: 2, values: { region: 1 } }])).toBeNull();
     expect(sanitizeUploadPayload([{ rowNumber: 2, values: { region: "a".repeat(5001) } }])).toBeNull();
     expect(sanitizeUploadPayload([{ rowNumber: 2, values: {} }, { rowNumber: 2, values: {} }])).toBeNull();

@@ -12,7 +12,12 @@ import {
   type BulkCheckResult,
   type CheckedRowStatus,
 } from "@/lib/bulk-upload/check";
-import { parseUploadFile, type ParsedUpload, type UploadRow } from "@/lib/bulk-upload/parse";
+import {
+  parsePastedUpload,
+  parseUploadFile,
+  type ParsedUpload,
+  type UploadRow,
+} from "@/lib/bulk-upload/parse";
 import { chunkRowsBySize, toPayload } from "@/lib/bulk-upload/payload";
 import type { EnqueueRowResult } from "@/lib/bulk-upload/enqueue";
 
@@ -48,6 +53,7 @@ export default function BulkUploadPanel() {
   const [holdSimilar, setHoldSimilar] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [summary, setSummary] = useState<EnqueueSummary | null>(null);
+  const [pasteText, setPasteText] = useState("");
 
   const reset = () => {
     setParsed(null);
@@ -68,7 +74,20 @@ export default function BulkUploadPanel() {
     if (!file) return;
 
     setBusy("parsing");
-    const result = await parseUploadFile(file.name, await file.arrayBuffer());
+    await runCheck(await parseUploadFile(file.name, await file.arrayBuffer()));
+  };
+
+  /** AI가 준 표(탭 구분)를 붙여넣은 경우 — 파일과 같은 검사를 거친다. */
+  const handlePasteCheck = async () => {
+    if (busy) return;
+    reset();
+    setFileName(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setBusy("parsing");
+    await runCheck(parsePastedUpload(pasteText));
+  };
+
+  const runCheck = async (result: ParsedUpload) => {
     setParsed(result);
     if (result.fileErrors.length > 0) {
       setBusy(null);
@@ -145,7 +164,7 @@ export default function BulkUploadPanel() {
   return (
     <div className="flex flex-col gap-6">
       <Card className="p-6">
-        <h2 className="text-base font-semibold text-slate-900">1. 파일 올리기</h2>
+        <h2 className="text-base font-semibold text-slate-900">1. 파일 올리기 또는 붙여넣기</h2>
         <p className="mt-1 text-sm text-slate-500">
           양식의 첫 줄(머리글)은 그대로 두고 둘째 줄부터 입력하세요. xlsx와 csv(UTF-8 또는
           엑셀 기본 저장 형식)를 읽을 수 있고, 한 번에 최대 2,000행까지 올릴 수 있습니다.
@@ -173,6 +192,32 @@ export default function BulkUploadPanel() {
             선택한 파일: <span className="font-medium text-slate-700">{fileName}</span>
           </p>
         ) : null}
+
+        <div className="mt-6 border-t border-slate-100 pt-4">
+          <label htmlFor="bulkPasteText" className="text-sm font-medium text-slate-700">
+            또는 표 붙여넣기
+          </label>
+          <p className="mt-1 text-xs text-slate-500">
+            AI가 준 표나 엑셀·구글 시트에서 복사한 표(탭 구분)를 그대로 붙여넣으세요. 머리글 줄이 없으면
+            양식 열 순서로 읽습니다. 마크다운 표(|)도 읽을 수 있습니다.
+          </p>
+          <textarea
+            id="bulkPasteText"
+            className="mt-2 min-h-32 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder={"지역\t키워드\tregion_slug\t..."}
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            disabled={busy !== null}
+          />
+          <button
+            type="button"
+            onClick={handlePasteCheck}
+            disabled={busy !== null || pasteText.trim() === ""}
+            className="mt-2 rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+          >
+            붙여넣은 표 검사
+          </button>
+        </div>
         {busy === "parsing" || busy === "checking" ? (
           <p className="mt-3 text-sm text-slate-500">
             {busy === "parsing" ? "파일을 읽는 중..." : "검사하는 중..."}
