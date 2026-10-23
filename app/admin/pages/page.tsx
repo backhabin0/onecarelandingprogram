@@ -2,13 +2,23 @@ import Link from "next/link";
 import PageHeader from "@/components/admin/PageHeader";
 import Card from "@/components/admin/Card";
 import PageTable from "@/components/admin/PageTable";
-import { getLandingPages } from "@/lib/landing-pages";
+import Pagination from "@/components/admin/Pagination";
+import { LANDING_PAGES_PAGE_SIZE, getLandingPagesPage } from "@/lib/landing-pages";
 
 // 관리자 목록은 항상 최신 DB 상태를 조회해야 하므로 정적 프리렌더링을 사용하지 않는다.
 export const dynamic = "force-dynamic";
 
-export default async function AdminPagesPage() {
-  const { data: pages, error } = await getLandingPages();
+interface AdminPagesPageProps {
+  searchParams: Promise<{ page?: string }>;
+}
+
+export default async function AdminPagesPage({ searchParams }: AdminPagesPageProps) {
+  const params = await searchParams;
+  const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
+
+  const { data: pages, count, error } = await getLandingPagesPage(page);
+
+  const totalPages = Math.max(1, Math.ceil(count / LANDING_PAGES_PAGE_SIZE));
 
   return (
     <div>
@@ -33,6 +43,14 @@ export default async function AdminPagesPage() {
 
       <Card>
         <PageTable pages={pages} />
+        {count > 0 ? (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            baseParams={{}}
+            basePath="/admin/pages"
+          />
+        ) : null}
       </Card>
     </div>
   );

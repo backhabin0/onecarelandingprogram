@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import type {
   AnalyticsFilters,
   AnalyticsPeriod,
@@ -17,9 +18,6 @@ import type {
  */
 export const ANALYTICS_TIME_ZONE = "Asia/Seoul";
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
-
-/** 기간별 추이/랜딩페이지별 성과 집계 시 한 번에 가져오는 최대 이벤트 행 수(안전장치) */
-const ANALYTICS_MAX_ROWS = 10000;
 
 interface KstParts {
   year: number;
@@ -219,9 +217,9 @@ export interface GetAnalyticsTimeSeriesResult {
 }
 
 /**
- * 기간별 추이 그래프/표용 데이터. 기간 범위로 제한된 이벤트/상담 행만
- * (최대 ANALYTICS_MAX_ROWS건) 가져와 서버에서 구간별로 집계한다 — 전체
- * 테이블을 브라우저로 보내지 않는다.
+ * 기간별 추이 그래프/표용 데이터. 기간 범위로 제한된 이벤트/상담 행을
+ * 1,000행씩 끝까지 나눠 가져와 서버에서 구간별로 집계한다 — 전체 테이블을
+ * 브라우저로 보내지 않는다.
  */
 export async function getAnalyticsTimeSeries(
   filters: AnalyticsFilters
@@ -231,37 +229,51 @@ export async function getAnalyticsTimeSeries(
     const { start, end } = getAnalyticsPeriodRange(filters.period);
     const buckets = buildBuckets(filters.period, start);
 
-    let eventsQuery = supabase
-      .from("landing_page_events")
-      .select("event_type, created_at")
-      .gte("created_at", start.toISOString())
-      .lt("created_at", end.toISOString())
-      .limit(ANALYTICS_MAX_ROWS);
+    const eventsPage = (from: number, to: number) => {
+      let query = supabase
+        .from("landing_page_events")
+        .select("event_type, created_at")
+        .gte("created_at", start.toISOString())
+        .lt("created_at", end.toISOString());
 
-    if (filters.landingPageId && filters.landingPageId !== "all") {
-      eventsQuery =
-        filters.landingPageId === "deleted"
-          ? eventsQuery.is("landing_page_id", null)
-          : eventsQuery.eq("landing_page_id", filters.landingPageId);
-    }
+      if (filters.landingPageId && filters.landingPageId !== "all") {
+        query =
+          filters.landingPageId === "deleted"
+            ? query.is("landing_page_id", null)
+            : query.eq("landing_page_id", filters.landingPageId);
+      }
 
-    let consultationsQuery = supabase
-      .from("consultation_requests")
-      .select("created_at")
-      .gte("created_at", start.toISOString())
-      .lt("created_at", end.toISOString())
-      .limit(ANALYTICS_MAX_ROWS);
+      return query
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to);
+    };
 
-    if (filters.landingPageId && filters.landingPageId !== "all") {
-      consultationsQuery =
-        filters.landingPageId === "deleted"
-          ? consultationsQuery.is("landing_page_id", null)
-          : consultationsQuery.eq("landing_page_id", filters.landingPageId);
-    }
+    const consultationsPage = (from: number, to: number) => {
+      let query = supabase
+        .from("consultation_requests")
+        .select("created_at")
+        .gte("created_at", start.toISOString())
+        .lt("created_at", end.toISOString());
+
+      if (filters.landingPageId && filters.landingPageId !== "all") {
+        query =
+          filters.landingPageId === "deleted"
+            ? query.is("landing_page_id", null)
+            : query.eq("landing_page_id", filters.landingPageId);
+      }
+
+      return query
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to);
+    };
 
     const [eventsRes, consultationsRes] = await Promise.all([
-      eventsQuery,
-      consultationsQuery,
+      fetchAllRows<{ event_type: LandingPageEventType; created_at: string }>(
+        eventsPage
+      ),
+      fetchAllRows<{ created_at: string }>(consultationsPage),
     ]);
 
     if (eventsRes.error || consultationsRes.error) {
@@ -281,12 +293,7 @@ export async function getAnalyticsTimeSeries(
       consultations: 0,
     }));
 
-    const eventRows =
-      (eventsRes.data as
-        | { event_type: LandingPageEventType; created_at: string }[]
-        | null) ?? [];
-
-    for (const row of eventRows) {
+    for (const row of eventsRes.data) {
       const index = findBucketIndex(buckets, new Date(row.created_at));
       if (index === -1) continue;
       if (row.event_type === "page_view") points[index].pageViews += 1;
@@ -294,10 +301,7 @@ export async function getAnalyticsTimeSeries(
       else if (row.event_type === "kakao_click") points[index].kakaoClicks += 1;
     }
 
-    const consultationRows =
-      (consultationsRes.data as { created_at: string }[] | null) ?? [];
-
-    for (const row of consultationRows) {
+    for (const row of consultationsRes.data) {
       const index = findBucketIndex(buckets, new Date(row.created_at));
       if (index === -1) continue;
       points[index].consultations += 1;
@@ -341,19 +345,37 @@ export async function getLandingPagePerformance(
     const { start, end } = getAnalyticsPeriodRange(period);
 
     const [eventsRes, consultationsRes, landingPagesRes] = await Promise.all([
-      supabase
-        .from("landing_page_events")
-        .select("landing_page_id, event_type")
-        .gte("created_at", start.toISOString())
-        .lt("created_at", end.toISOString())
-        .limit(ANALYTICS_MAX_ROWS),
-      supabase
-        .from("consultation_requests")
-        .select("landing_page_id")
-        .gte("created_at", start.toISOString())
-        .lt("created_at", end.toISOString())
-        .limit(ANALYTICS_MAX_ROWS),
-      supabase.from("landing_pages").select("id, business_name, slug"),
+      fetchAllRows<{
+        landing_page_id: string | null;
+        event_type: LandingPageEventType;
+      }>((from, to) =>
+        supabase
+          .from("landing_page_events")
+          .select("landing_page_id, event_type")
+          .gte("created_at", start.toISOString())
+          .lt("created_at", end.toISOString())
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
+      fetchAllRows<{ landing_page_id: string | null }>((from, to) =>
+        supabase
+          .from("consultation_requests")
+          .select("landing_page_id")
+          .gte("created_at", start.toISOString())
+          .lt("created_at", end.toISOString())
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
+      fetchAllRows<{ id: string; business_name: string; slug: string }>(
+        (from, to) =>
+          supabase
+            .from("landing_pages")
+            .select("id, business_name, slug")
+            .order("id", { ascending: true })
+            .range(from, to)
+      ),
     ]);
 
     const firstError = eventsRes.error ?? consultationsRes.error ?? landingPagesRes.error;
@@ -364,12 +386,7 @@ export async function getLandingPagePerformance(
 
     const byLandingPage = new Map<string, PerformanceAccumulator>();
 
-    const eventRows =
-      (eventsRes.data as
-        | { landing_page_id: string | null; event_type: LandingPageEventType }[]
-        | null) ?? [];
-
-    for (const row of eventRows) {
+    for (const row of eventsRes.data) {
       const key = row.landing_page_id ?? DELETED_LANDING_PAGE_KEY;
       const acc = byLandingPage.get(key) ?? emptyAccumulator();
       if (row.event_type === "page_view") acc.pageViews += 1;
@@ -378,10 +395,7 @@ export async function getLandingPagePerformance(
       byLandingPage.set(key, acc);
     }
 
-    const consultationRows =
-      (consultationsRes.data as { landing_page_id: string | null }[] | null) ?? [];
-
-    for (const row of consultationRows) {
+    for (const row of consultationsRes.data) {
       const key = row.landing_page_id ?? DELETED_LANDING_PAGE_KEY;
       const acc = byLandingPage.get(key) ?? emptyAccumulator();
       acc.consultations += 1;
@@ -389,11 +403,7 @@ export async function getLandingPagePerformance(
     }
 
     const landingPageInfoById = new Map(
-      (
-        (landingPagesRes.data as
-          | { id: string; business_name: string; slug: string }[]
-          | null) ?? []
-      ).map((lp) => [lp.id, lp] as const)
+      landingPagesRes.data.map((lp) => [lp.id, lp] as const)
     );
 
     const rows: LandingPagePerformanceRow[] = [];

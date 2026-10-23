@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import { isReservedSlug } from "@/lib/slug";
 import type { LandingPage } from "@/types/landing-page";
 import type { LandingPageFaq, LandingPageSeoSettings } from "@/types/seo";
@@ -9,7 +10,6 @@ import type { ConsultationRequest } from "@/types/consultation-request";
 import type { BackupEventRow, BackupFile } from "@/types/backup";
 
 const WRITE_CHUNK_SIZE = 500;
-const ID_FETCH_PAGE_SIZE = 1000;
 
 function chunk<T>(items: T[], size: number): T[][] {
   const result: T[][] = [];
@@ -19,35 +19,34 @@ function chunk<T>(items: T[], size: number): T[][] {
   return result;
 }
 
-/** id(uuid) 컬럼 하나만 페이지네이션으로 전부 가져온다. 대량 데이터에도 안전하게 Set으로 반환한다. */
+/**
+ * id(uuid) 컬럼 하나만 1,000행씩 나눠 전부 가져온다(lib/supabase/fetch-all-rows.ts).
+ * 페이지 사이에 행이 빠지거나 중복되지 않도록 그 컬럼으로 정렬한다
+ * (id/landing_page_id/submission_id는 모두 유일 값). 대량 데이터에도 안전하게 Set으로 반환한다.
+ */
 async function fetchAllIds(
   supabase: SupabaseClient,
   table: string,
   column: string
 ): Promise<{ ids: Set<string>; error: string | null }> {
-  const ids = new Set<string>();
-  let from = 0;
-
-  for (;;) {
-    const { data, error } = await supabase
+  const { data, error } = await fetchAllRows<Record<string, string>>((from, to) =>
+    supabase
       .from(table)
       .select(column)
       .not(column, "is", null)
-      .range(from, from + ID_FETCH_PAGE_SIZE - 1);
+      .order(column, { ascending: true })
+      .range(from, to)
+  );
 
-    if (error) {
-      console.error(`[backup-restore] ${table}.${column} select error:`, error.message);
-      return { ids: new Set(), error: `${table} 현재 상태를 확인하지 못했습니다.` };
-    }
+  if (error) {
+    console.error(`[backup-restore] ${table}.${column} select error:`, error);
+    return { ids: new Set(), error: `${table} 현재 상태를 확인하지 못했습니다.` };
+  }
 
-    const page = (data ?? []) as unknown as Record<string, string>[];
-    for (const row of page) {
-      const value = row[column];
-      if (value) ids.add(value);
-    }
-
-    if (page.length < ID_FETCH_PAGE_SIZE) break;
-    from += ID_FETCH_PAGE_SIZE;
+  const ids = new Set<string>();
+  for (const row of data) {
+    const value = row[column];
+    if (value) ids.add(value);
   }
 
   return { ids, error: null };
@@ -118,16 +117,23 @@ export async function computeRestorePlan(
   try {
     const supabase = await getSupabaseServerClient();
 
-    const { data: currentLandingPages, error: lpError } = await supabase
-      .from("landing_pages")
-      .select("id, slug");
+    // 1,000행 상한에 잘리면 slug 충돌을 놓치므로 끝까지 나눠 읽는다.
+    const { data: currentRows, error: lpError } = await fetchAllRows<{
+      id: string;
+      slug: string;
+    }>((from, to) =>
+      supabase
+        .from("landing_pages")
+        .select("id, slug")
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
 
     if (lpError) {
-      console.error("[backup-restore] landing_pages select error:", lpError.message);
+      console.error("[backup-restore] landing_pages select error:", lpError);
       return { plan: null, error: "현재 랜딩페이지 목록을 불러오지 못했습니다." };
     }
 
-    const currentRows = (currentLandingPages ?? []) as { id: string; slug: string }[];
     const currentIdSet = new Set(currentRows.map((r) => r.id));
     const currentSlugOwner = new Map(currentRows.map((r) => [r.slug, r.id] as const));
 

@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { fetchAllRows, type FetchAllRowsResult } from "@/lib/supabase/fetch-all-rows";
 import { getSiteUrl } from "@/lib/site";
 import { getStoragePathFromPublicUrl } from "@/lib/storage/landing-page-assets";
 import type { LandingPage } from "@/types/landing-page";
@@ -17,55 +18,30 @@ import {
 } from "@/types/backup";
 
 /**
- * PostgREST/Supabase는 한 번의 요청으로 반환하는 row 수에 상한이 있을 수
- * 있으므로, 이 크기로 잘라 range(from, to)를 반복 호출해 전체 데이터를
- * 빠짐없이 가져온다. 마지막 페이지의 길이가 이 값보다 작으면 종료한다.
- */
-const BACKUP_PAGE_SIZE = 1000;
-
-export interface FetchAllRowsResult<T> {
-  data: T[];
-  error: string | null;
-}
-
-/**
  * 정렬 기준(created_at asc, id asc 등 안정적인 순서)을 적용해 테이블 전체를
- * 페이지네이션으로 조회한다. 중간 페이지 조회가 하나라도 실패하면 그때까지
- * 모은 행을 버리고 즉시 실패를 반환한다 — 불완전한 결과를 반환하지 않는다.
+ * 1,000행씩 나눠 조회한다(lib/supabase/fetch-all-rows.ts). 중간 페이지 조회가
+ * 하나라도 실패하면 불완전한 결과를 반환하지 않고 즉시 실패를 반환한다.
  */
-async function fetchAllRows<T>(
+async function fetchAllTableRows<T>(
   supabase: SupabaseClient,
   table: string,
   select: string,
   orderColumns: string[]
 ): Promise<FetchAllRowsResult<T>> {
-  const rows: T[] = [];
-  let from = 0;
-
-  for (;;) {
+  const result = await fetchAllRows<T>((from, to) => {
     let query = supabase.from(table).select(select);
     for (const column of orderColumns) {
       query = query.order(column, { ascending: true });
     }
-    query = query.range(from, from + BACKUP_PAGE_SIZE - 1);
+    return query.range(from, to);
+  });
 
-    const { data, error } = await query;
-
-    if (error) {
-      console.error(`[backup] ${table} select error (from=${from}):`, error.message);
-      return { data: [], error: `${table} 데이터를 불러오지 못했습니다.` };
-    }
-
-    const page = (data ?? []) as T[];
-    rows.push(...page);
-
-    if (page.length < BACKUP_PAGE_SIZE) {
-      break;
-    }
-    from += BACKUP_PAGE_SIZE;
+  if (result.error) {
+    console.error(`[backup] ${table} select error:`, result.error);
+    return { data: [], error: `${table} 데이터를 불러오지 못했습니다.` };
   }
 
-  return { data: rows, error: null };
+  return result;
 }
 
 function buildStorageManifest(
@@ -125,27 +101,27 @@ export async function buildBackupFile(): Promise<BuildBackupFileResult> {
 
     const [landingPagesRes, seoRes, faqsRes, consultationsRes, eventsRes, verificationRes] =
       await Promise.all([
-        fetchAllRows<LandingPage>(supabase, "landing_pages", "*", [
+        fetchAllTableRows<LandingPage>(supabase, "landing_pages", "*", [
           "created_at",
           "id",
         ]),
-        fetchAllRows<LandingPageSeoSettings>(
+        fetchAllTableRows<LandingPageSeoSettings>(
           supabase,
           "landing_page_seo_settings",
           "*",
           ["landing_page_id"]
         ),
-        fetchAllRows<LandingPageFaq>(supabase, "landing_page_faqs", "*", [
+        fetchAllTableRows<LandingPageFaq>(supabase, "landing_page_faqs", "*", [
           "created_at",
           "id",
         ]),
-        fetchAllRows<ConsultationRequest>(
+        fetchAllTableRows<ConsultationRequest>(
           supabase,
           "consultation_requests",
           "*",
           ["created_at", "id"]
         ),
-        fetchAllRows<BackupEventRow>(supabase, "landing_page_events", "*", [
+        fetchAllTableRows<BackupEventRow>(supabase, "landing_page_events", "*", [
           "created_at",
           "id",
         ]),

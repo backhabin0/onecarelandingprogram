@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import type {
   ConsultationRequestFilters,
   ConsultationRequestStatus,
@@ -13,9 +14,6 @@ const CONSULTATION_SELECT_WITH_LANDING_PAGE =
 
 /** 관리자 목록 화면의 한 페이지에 보여줄 건수 */
 export const CONSULTATION_REQUESTS_PAGE_SIZE = 20;
-
-/** CSV/Excel 내보내기에서 한 번에 가져올 수 있는 최대 건수(안전장치) */
-const CONSULTATION_EXPORT_MAX_ROWS = 5000;
 
 /**
  * 이름/연락처 검색어를 PostgREST `.or()` 필터 문자열에 안전하게 넣기 위해
@@ -155,53 +153,53 @@ export interface GetConsultationRequestsForExportResult {
 }
 
 /**
- * CSV/Excel 내보내기용 조회. 페이지네이션 없이 현재 검색/필터 조건에 맞는
- * 전체 결과를(최대 CONSULTATION_EXPORT_MAX_ROWS건까지) 가져온다.
+ * CSV/Excel 내보내기용 조회. 화면 페이지네이션 없이 현재 검색/필터 조건에
+ * 맞는 전체 결과를 가져온다 — Supabase 1,000행 상한에 잘리지 않도록
+ * 1,000행씩 끝까지 나눠 읽는다.
  */
 export async function getConsultationRequestsForExport(
   filters: Omit<ConsultationRequestFilters, "page">
 ): Promise<GetConsultationRequestsForExportResult> {
   try {
     const supabase = await getSupabaseServerClient();
-
-    let query = supabase
-      .from("consultation_requests")
-      .select(CONSULTATION_SELECT_WITH_LANDING_PAGE);
-
+    const ascending = filters.sort === "oldest";
     const search = filters.search?.trim();
-    if (search) {
-      const term = sanitizeSearchTerm(search);
-      if (term) {
-        query = query.or(`name.ilike.%${term}%,phone.ilike.%${term}%`);
+    const term = search ? sanitizeSearchTerm(search) : "";
+
+    const { data, error } = await fetchAllRows<ConsultationRequestWithLandingPage>(
+      (from, to) => {
+        let query = supabase
+          .from("consultation_requests")
+          .select(CONSULTATION_SELECT_WITH_LANDING_PAGE);
+
+        if (term) {
+          query = query.or(`name.ilike.%${term}%,phone.ilike.%${term}%`);
+        }
+
+        if (filters.status && filters.status !== "all") {
+          query = query.eq("status", filters.status);
+        }
+
+        if (filters.landingPageId && filters.landingPageId !== "all") {
+          query =
+            filters.landingPageId === "deleted"
+              ? query.is("landing_page_id", null)
+              : query.eq("landing_page_id", filters.landingPageId);
+        }
+
+        return query
+          .order("created_at", { ascending })
+          .order("id", { ascending })
+          .range(from, to);
       }
-    }
-
-    if (filters.status && filters.status !== "all") {
-      query = query.eq("status", filters.status);
-    }
-
-    if (filters.landingPageId && filters.landingPageId !== "all") {
-      query =
-        filters.landingPageId === "deleted"
-          ? query.is("landing_page_id", null)
-          : query.eq("landing_page_id", filters.landingPageId);
-    }
-
-    query = query
-      .order("created_at", { ascending: filters.sort === "oldest" })
-      .range(0, CONSULTATION_EXPORT_MAX_ROWS - 1);
-
-    const { data, error } = await query;
+    );
 
     if (error) {
       console.error("[consultation_requests] export select error:", error);
       return { data: [], error: "상담 내역을 불러오지 못했습니다." };
     }
 
-    return {
-      data: (data as unknown as ConsultationRequestWithLandingPage[]) ?? [],
-      error: null,
-    };
+    return { data, error: null };
   } catch (err) {
     console.error("[consultation_requests] client error:", err);
     return { data: [], error: "상담 내역을 불러오지 못했습니다." };
