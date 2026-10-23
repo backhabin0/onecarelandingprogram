@@ -10,6 +10,8 @@ export const DAILY_LIMIT_DEFAULT = 50;
 export interface AutoPublishSettings {
   enabled: boolean;
   dailyLimit: number;
+  /** 7단계(016): 얇은 페이지를 noindex로 공개할지(기본 꺼짐) */
+  noindexThinPages: boolean;
 }
 
 export interface PublishRunRow {
@@ -31,19 +33,26 @@ export async function getAutoPublishSettings(): Promise<{
   data: AutoPublishSettings;
   error: string | null;
 }> {
-  const fallback = { enabled: false, dailyLimit: DAILY_LIMIT_DEFAULT };
+  const fallback = { enabled: false, dailyLimit: DAILY_LIMIT_DEFAULT, noindexThinPages: false };
   try {
     const supabase = await getSupabaseServerClient();
     const { data, error } = await supabase
       .from("auto_publish_settings")
-      .select("enabled, daily_limit")
+      .select("enabled, daily_limit, noindex_thin_pages")
       .eq("id", "default")
       .maybeSingle();
     if (error || !data) {
       if (error) console.error("[auto-publish] settings select error:", error.message);
       return { data: fallback, error: "자동 공개 설정을 불러오지 못했습니다." };
     }
-    return { data: { enabled: data.enabled, dailyLimit: data.daily_limit }, error: null };
+    return {
+      data: {
+        enabled: data.enabled,
+        dailyLimit: data.daily_limit,
+        noindexThinPages: data.noindex_thin_pages === true,
+      },
+      error: null,
+    };
   } catch (err) {
     console.error("[auto-publish] client error:", err instanceof Error ? err.message : err);
     return { data: fallback, error: "자동 공개 설정을 불러오지 못했습니다." };
@@ -60,7 +69,11 @@ export async function updateAutoPublishSettings(
     const supabase = await getSupabaseServerClient();
     const { data, error } = await supabase
       .from("auto_publish_settings")
-      .update({ enabled: settings.enabled, daily_limit: settings.dailyLimit })
+      .update({
+        enabled: settings.enabled,
+        daily_limit: settings.dailyLimit,
+        noindex_thin_pages: settings.noindexThinPages,
+      })
       .eq("id", "default")
       .select("id");
     if (error) {

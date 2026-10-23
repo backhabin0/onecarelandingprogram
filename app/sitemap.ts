@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import { getPublicLandingPagesForSitemap } from "@/lib/landing-pages";
 import { getAbsoluteUrl } from "@/lib/site";
 import { getSitemapLastModified } from "@/lib/sitemap-lastmod";
+import { areaHubPath, buildAreaHubs } from "@/lib/local-seo";
 
 /**
  * status = 'public'이면서 seo_noindex가 true가 아닌 landing_pages만 포함한다
@@ -16,10 +17,23 @@ import { getSitemapLastModified } from "@/lib/sitemap-lastmod";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const { data: landingPages } = await getPublicLandingPagesForSitemap();
 
-  return landingPages.map((page) => ({
+  const pages: MetadataRoute.Sitemap = landingPages.map((page) => ({
     url: getAbsoluteUrl(`/${page.slug}`),
     lastModified: getSitemapLastModified(page),
     changeFrequency: "weekly",
     priority: 0.7,
   }));
+
+  // 7단계: 지역 모음 페이지(/area/{city_slug}) — 공개+noindex 아닌 페이지가 1개 이상인 시/군만.
+  // landingPages는 이미 noindex를 뺀 목록이라 그대로 묶는다(추가 조회 없음).
+  const hubs: MetadataRoute.Sitemap = buildAreaHubs(
+    landingPages.map((page) => ({ ...page, noindex: false }))
+  ).map((hub) => ({
+    url: getAbsoluteUrl(areaHubPath(hub.citySlug)),
+    lastModified: hub.lastModified,
+    changeFrequency: "weekly",
+    priority: 0.6,
+  }));
+
+  return [...pages, ...hubs];
 }

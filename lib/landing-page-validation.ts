@@ -35,6 +35,26 @@ export const SEO_MAX_LENGTH = {
   serviceArea: 200,
 } as const;
 
+/** 지역 SEO 칸 글자 수 제한(016 migration의 DB 제약과 같음) */
+export const LOCAL_SEO_MAX_LENGTH = {
+  region: 50,
+  keyword: 50,
+  city: 50,
+  mainImageUrl: 500,
+  mainImageAlt: 200,
+  caseStudy: 2000,
+} as const;
+
+/**
+ * 얇은 페이지 기준: 소개 문구가 이 글자 수보다 짧고 대표 사진·현장 사례가 모두 없으면
+ * 업로드 때 경고한다. 설정에서 "얇은 페이지 noindex"를 켜면 공개 함수(016)가 같은
+ * 기준으로 noindex를 건다.
+ */
+export const THIN_DESCRIPTION_MIN_LENGTH = 200;
+
+/** 소개 문구+대표 문구에서 같은 키워드가 이 횟수를 넘으면 과다 반복 경고 */
+export const KEYWORD_REPEAT_LIMIT = 5;
+
 /** FAQ 글자 수 제한(앞뒤 공백 제거 후 기준) */
 export const FAQ_MAX_LENGTH = {
   question: 200,
@@ -99,7 +119,9 @@ export type ValidationIssueCode =
   | "similarity_high"
   | "phone_number_cell"
   | "contains_phone"
-  | "contains_price";
+  | "contains_price"
+  | "keyword_overuse"
+  | "thin_page";
 
 export interface ValidationIssue {
   code: ValidationIssueCode;

@@ -40,6 +40,12 @@ export interface LandingPageQueueRow {
   service_area: string | null;
   business_category: string | null;
   faqs: LandingPageQueueFaq[];
+  /** 016: 시/군, 대표 사진, 현장 사례(손님이 직접 작성) */
+  city: string | null;
+  city_slug: string | null;
+  main_image_url: string | null;
+  main_image_alt: string | null;
+  case_study: string | null;
   source: LandingPageQueueSource;
   state: LandingPageQueueState;
   /** 앱 검증 결과나 공개 실패 사유(배열). 형식은 lib/landing-page-validation.ts의 ValidationIssue */

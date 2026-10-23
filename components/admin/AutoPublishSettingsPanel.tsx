@@ -33,6 +33,7 @@ export interface IndexNowView {
 interface AutoPublishSettingsPanelProps {
   enabled: boolean;
   dailyLimit: number;
+  noindexThinPages: boolean;
   limitRange: { min: number; max: number };
   runs: PublishRunView[];
   indexNow: IndexNowView;
@@ -51,6 +52,7 @@ const formatKst = (iso: string) => new Date(iso).toLocaleString("ko-KR", { timeZ
 export default function AutoPublishSettingsPanel({
   enabled: initialEnabled,
   dailyLimit: initialLimit,
+  noindexThinPages: initialNoindexThin,
   limitRange,
   runs,
   indexNow,
@@ -59,6 +61,7 @@ export default function AutoPublishSettingsPanel({
   const router = useRouter();
   const [enabled, setEnabled] = useState(initialEnabled);
   const [dailyLimit, setDailyLimit] = useState(String(initialLimit));
+  const [noindexThinPages, setNoindexThinPages] = useState(initialNoindexThin);
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -83,7 +86,7 @@ export default function AutoPublishSettingsPanel({
       setMessage({ type: "error", text: `하루 개수는 ${limitRange.min}~${limitRange.max} 사이의 정수여야 합니다.` });
       return;
     }
-    run(() => updateAutoPublishSettingsAction({ enabled, dailyLimit: limit }), "저장했습니다.");
+    run(() => updateAutoPublishSettingsAction({ enabled, dailyLimit: limit, noindexThinPages }), "저장했습니다.");
   };
 
   const handleRunNow = () => {
@@ -112,6 +115,22 @@ export default function AutoPublishSettingsPanel({
             onChange={(e) => setEnabled(e.target.checked)}
           />
           자동 공개 켜기
+        </label>
+        <label className="flex items-start gap-2 text-sm text-slate-700">
+          <input
+            id="noindexThinPages"
+            type="checkbox"
+            className="mt-0.5"
+            checked={noindexThinPages}
+            onChange={(e) => setNoindexThinPages(e.target.checked)}
+          />
+          <span>
+            내용이 적은 페이지는 검색 제외(noindex)로 공개
+            <span className="block text-xs text-slate-500">
+              소개 문구 200자 미만이면서 대표 사진·현장 사례가 모두 없는 페이지. 기본은 꺼짐(업로드 때 경고만).
+              켜면 이후 공개되는 페이지부터 적용되고, 관리자 화면의 SEO 설정에서 페이지별로 다시 바꿀 수 있습니다.
+            </span>
+          </span>
         </label>
         <div className="max-w-xs">
           <FormField label="하루 공개 개수" htmlFor="autoPublishDailyLimit" hint={`${limitRange.min}~${limitRange.max}, 기본 50`}>

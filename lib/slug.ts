@@ -14,6 +14,8 @@ export const RESERVED_SLUGS: readonly string[] = [
   "favicon.ico",
   "manifest.webmanifest",
   "_next",
+  // 7단계: 지역 모음 페이지(/area/{city_slug})
+  "area",
 ];
 
 export function isReservedSlug(slug: string): boolean {

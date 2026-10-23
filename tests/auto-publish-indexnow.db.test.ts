@@ -165,9 +165,9 @@ describe("매일 실행 등록 SQL(supabase/manual/015_cron_schedule.sql)", () =
 describe("앱: 자동 공개 설정·지금 실행(lib/auto-publish)", () => {
   it("설정 저장(1~100), 지금 실행, 최근 실행 기록", async () => {
     await seedQueue(4);
-    expect(await autoPublish.updateAutoPublishSettings({ enabled: true, dailyLimit: 101 })).toMatchObject({ success: false });
-    expect(await autoPublish.updateAutoPublishSettings({ enabled: false, dailyLimit: 3 })).toEqual({ success: true });
-    expect(await autoPublish.getAutoPublishSettings()).toEqual({ data: { enabled: false, dailyLimit: 3 }, error: null });
+    expect(await autoPublish.updateAutoPublishSettings({ enabled: true, dailyLimit: 101, noindexThinPages: false })).toMatchObject({ success: false });
+    expect(await autoPublish.updateAutoPublishSettings({ enabled: false, dailyLimit: 3, noindexThinPages: false })).toEqual({ success: true });
+    expect(await autoPublish.getAutoPublishSettings()).toEqual({ data: { enabled: false, dailyLimit: 3, noindexThinPages: false }, error: null });
 
     expect(await autoPublish.runAutoPublishNow()).toEqual({
       success: true,

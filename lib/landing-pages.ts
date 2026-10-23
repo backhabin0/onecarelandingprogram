@@ -569,6 +569,12 @@ export interface SitemapLandingPageRow {
   created_at: string;
   /** 대기열에서 공개된 시각(013). 관리자가 직접 만든 페이지는 null */
   published_at: string | null;
+  /** 016: 지역 모음 페이지(/area/{city_slug})를 sitemap에 넣을 때 쓴다 */
+  title: string;
+  region: string | null;
+  keyword: string | null;
+  city: string | null;
+  city_slug: string | null;
 }
 
 export interface GetPublicLandingPagesForSitemapResult {
@@ -594,7 +600,7 @@ export async function getPublicLandingPagesForSitemap(): Promise<GetPublicLandin
       supabase
         .from("landing_pages")
         .select(
-          "slug, updated_at, created_at, published_at, seo_settings:landing_page_seo_settings(seo_noindex)"
+          "slug, title, updated_at, created_at, published_at, region, keyword, city, city_slug, seo_settings:landing_page_seo_settings(seo_noindex)"
         )
         .eq("status", "public")
         .order("created_at", { ascending: false })
@@ -610,11 +616,16 @@ export async function getPublicLandingPagesForSitemap(): Promise<GetPublicLandin
     return {
       data: rows
         .filter((row) => row.seo_settings?.seo_noindex !== true)
-        .map(({ slug, updated_at, created_at, published_at }) => ({
+        .map(({ slug, title, updated_at, created_at, published_at, region, keyword, city, city_slug }) => ({
           slug,
+          title,
           updated_at,
           created_at,
           published_at: published_at ?? null,
+          region: region ?? null,
+          keyword: keyword ?? null,
+          city: city ?? null,
+          city_slug: city_slug ?? null,
         })),
       error: null,
     };

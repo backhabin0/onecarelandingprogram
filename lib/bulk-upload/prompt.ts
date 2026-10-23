@@ -1,5 +1,5 @@
 import { FAQ_MAX_LENGTH, LANDING_PAGE_MAX_LENGTH, SEO_MAX_LENGTH, SLUG_PATTERN } from "@/lib/landing-page-validation";
-import { BULK_UPLOAD_COLUMNS, type BulkUploadField } from "./columns";
+import { BULK_UPLOAD_COLUMNS, CUSTOMER_ONLY_FIELDS, type BulkUploadField } from "./columns";
 import { MAX_UPLOAD_ROWS } from "./parse";
 
 /**
@@ -186,6 +186,10 @@ function buildPromptText(
   lines.push("", "[그대로 복사할 칸 — 절대 바꾸지 마세요]");
   lines.push(`- ${COPY_FIELDS.map(header).join(", ")}`);
   lines.push("- 입력 표의 값을 한 글자도 바꾸지 말고 그대로 쓰세요. 빈 칸은 빈 칸으로 둡니다.");
+
+  lines.push("", "[비워 둘 칸 — 채우지 마세요]");
+  lines.push(`- ${CUSTOMER_ONLY_FIELDS.map(header).join(", ")}`);
+  lines.push("- 손님이 나중에 직접 채우는 칸입니다. 내용을 지어내지 말고 빈 칸 그대로 출력하세요.");
 
   lines.push("", "[직접 쓸 칸과 글자 수 제한(공백 포함, 이 숫자를 넘지 마세요)]");
   for (const { field, max } of AI_WRITTEN_FIELDS) {

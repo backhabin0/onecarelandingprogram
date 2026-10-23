@@ -29,6 +29,7 @@ const { default: QueueTable } = await import("@/components/admin/QueueTable");
 const { default: QueueItemForm } = await import("@/components/admin/QueueItemForm");
 const { default: SimilaritySettingsPanel } = await import("@/components/admin/SimilaritySettingsPanel");
 const { default: AutoPublishSettingsPanel } = await import("@/components/admin/AutoPublishSettingsPanel");
+const { default: PublishedUrlsPanel } = await import("@/components/admin/PublishedUrlsPanel");
 const { default: AdminQueuePage } = await import("@/app/admin/queue/page");
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
@@ -58,6 +59,11 @@ function checkedRow(rowNumber: number, patch: Partial<CheckedUploadRow> = {}): C
       seo_title: null,
       seo_description: null,
       faqs: [],
+      city: null,
+      city_slug: null,
+      main_image_url: null,
+      main_image_alt: null,
+      case_study: null,
       max_similarity: null,
     },
     ...patch,
@@ -85,6 +91,11 @@ function queueItem(patch: Partial<LandingPageQueueRow>): LandingPageQueueRow {
     service_area: null,
     business_category: null,
     faqs: [],
+    city: null,
+    city_slug: null,
+    main_image_url: null,
+    main_image_alt: null,
+    case_study: null,
     source: "excel",
     state: "ready",
     validation_errors: [],
@@ -99,11 +110,11 @@ function queueItem(patch: Partial<LandingPageQueueRow>): LandingPageQueueRow {
 }
 
 describe("관리자 메뉴", () => {
-  it("'대량 등록'과 '공개 대기열'이 기존 메뉴와 같은 모양으로 들어 있다", () => {
+  it("'AI 대량 생성'과 '공개 대기열'이 기존 메뉴와 같은 모양으로 들어 있다", () => {
     const html = renderToStaticMarkup(<AdminSidebar />);
     expect(html).toContain('href="/admin/bulk"');
     expect(html).toContain('href="/admin/queue"');
-    expect(text(html)).toMatch(/새 페이지 만들기 대량 등록 공개 대기열 상담 관리/);
+    expect(text(html)).toMatch(/새 페이지 만들기 AI 대량 생성 공개 대기열 상담 관리/);
     // 현재 경로(/admin/queue)는 활성 스타일
     expect(html).toMatch(/class="[^"]*bg-blue-600[^"]*" href="\/admin\/queue"/);
     expect(html).not.toMatch(/class="[^"]*bg-blue-600[^"]*" href="\/admin\/bulk"/);
@@ -252,6 +263,7 @@ describe("공개 대기열 화면", () => {
       <AutoPublishSettingsPanel
         enabled
         dailyLimit={30}
+        noindexThinPages={false}
         limitRange={{ min: 1, max: 100 }}
         runs={[
           { id: "r1", run_date: "2026-10-23", published_count: 30, failed_count: 2, finished_at: "2026-10-23T00:00:05.000Z", trigger: "cron" },
@@ -273,6 +285,28 @@ describe("공개 대기열 화면", () => {
     expect(t).toMatch(/아직 알리지 않은 공개 페이지 5 ?개/);
     expect(t).toContain("키 파일: https://onecare.example/key.txt");
     expect(t).toContain("실패: HTTP 429");
+  });
+
+  it("오늘 공개된 주소: 한 줄에 하나, 전체 복사, 날짜 선택(오늘까지)", () => {
+    const html = renderToStaticMarkup(
+      <PublishedUrlsPanel
+        date="2026-10-23"
+        today="2026-10-23"
+        urls={["https://onecare.example/a", "https://onecare.example/b"]}
+        error={null}
+        baseParams={{}}
+      />
+    );
+    expect(text(html)).toMatch(/오늘 공개된 주소 2개/);
+    expect(html).toContain("https://onecare.example/a\nhttps://onecare.example/b");
+    expect(html).toMatch(/id="publishedDate"[^>]*max="2026-10-23"[^>]*value="2026-10-23"/);
+    expect(text(html)).toContain("전체 복사");
+
+    const past = renderToStaticMarkup(
+      <PublishedUrlsPanel date="2026-10-20" today="2026-10-23" urls={[]} error={null} baseParams={{}} />
+    );
+    expect(text(past)).toContain("2026-10-20 공개된 주소");
+    expect(text(past)).toContain("이 날 공개된 페이지가 없습니다.");
   });
 
   it("설정: 유사도 기준값 입력", () => {

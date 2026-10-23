@@ -2,24 +2,26 @@ import CTAButtons from "@/components/landing/CTAButtons";
 import SafeImage from "@/components/landing/SafeImage";
 
 interface HeroSectionProps {
+  /** H1에 쓸 머리말(지역·키워드가 앞쪽에 오도록 다듬은 제목) */
   title: string;
+  /** 대표 사진 alt(입력값 또는 "지역 키워드 현장") */
+  imageAlt: string;
   heroText: string | null;
   mainImageUrl: string | null;
   phone: string | null;
   kakaoUrl: string | null;
   slug: string;
-  businessName: string;
   preview?: boolean;
 }
 
 export default function HeroSection({
   title,
+  imageAlt,
   heroText,
   mainImageUrl,
   phone,
   kakaoUrl,
   slug,
-  businessName,
   preview = false,
 }: HeroSectionProps) {
   return (
@@ -28,8 +30,11 @@ export default function HeroSection({
         {mainImageUrl ? (
           <SafeImage
             src={mainImageUrl}
-            alt={`${businessName} 대표 이미지`}
-            className="w-full rounded-xl object-cover"
+            alt={imageAlt}
+            wrapperClassName="relative aspect-[16/9] w-full overflow-hidden rounded-xl"
+            className="object-cover"
+            sizes="(max-width: 768px) 100vw, 768px"
+            highPriority
           />
         ) : null}
         <div className="flex flex-col gap-4">

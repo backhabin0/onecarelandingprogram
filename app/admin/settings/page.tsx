@@ -45,6 +45,7 @@ export default async function AdminSettingsPage() {
       <AutoPublishSettingsPanel
         enabled={autoPublish.data.enabled}
         dailyLimit={autoPublish.data.dailyLimit}
+        noindexThinPages={autoPublish.data.noindexThinPages}
         limitRange={{ min: DAILY_LIMIT_MIN, max: DAILY_LIMIT_MAX }}
         runs={runs.data}
         indexNow={{

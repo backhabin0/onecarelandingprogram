@@ -1,5 +1,9 @@
 import {
+  KEYWORD_REPEAT_LIMIT,
+  LOCAL_SEO_MAX_LENGTH,
   SLUG_PATTERN,
+  THIN_DESCRIPTION_MIN_LENGTH,
+  isSafeExternalUrl,
   validateFaqInput,
   validateLandingPageRows,
   type BulkLandingPageRowInput,
@@ -60,6 +64,11 @@ export interface QueueRowInput {
   seo_title: string | null;
   seo_description: string | null;
   faqs: LandingPageQueueFaq[];
+  city: string | null;
+  city_slug: string | null;
+  main_image_url: string | null;
+  main_image_alt: string | null;
+  case_study: string | null;
   max_similarity: number | null;
 }
 
@@ -193,6 +202,93 @@ function checkRegionKeyword(values: UploadValues, errors: ValidationIssue[]) {
   }
 }
 
+/** 7단계 지역 SEO 칸: 시/군·city_slug(둘 다 또는 둘 다 비움), 글자 수, 사진 URL 형식 */
+function checkLocalSeoFields(values: UploadValues, errors: ValidationIssue[]) {
+  const city = v(values, "city");
+  const citySlug = v(values, "citySlug").toLowerCase();
+  if (Boolean(city) !== Boolean(citySlug)) {
+    errors.push({
+      code: "required",
+      fields: city ? ["citySlug"] : ["city"],
+      message: "시/군과 city_slug는 함께 입력하거나 둘 다 비워 주세요.",
+    });
+  }
+  if (citySlug && !SLUG_PATTERN.test(citySlug)) {
+    errors.push({
+      code: "invalid_slug",
+      fields: ["citySlug"],
+      message: "city_slug는 영문 소문자, 숫자, 하이픈(-)만 사용할 수 있습니다.",
+    });
+  }
+
+  const lengthChecks: [keyof UploadValues, string, number][] = [
+    ["region", "지역은", LOCAL_SEO_MAX_LENGTH.region],
+    ["keyword", "키워드는", LOCAL_SEO_MAX_LENGTH.keyword],
+    ["city", "시/군은", LOCAL_SEO_MAX_LENGTH.city],
+    ["mainImageUrl", "대표 사진 URL은", LOCAL_SEO_MAX_LENGTH.mainImageUrl],
+    ["mainImageAlt", "사진 설명(alt)은", LOCAL_SEO_MAX_LENGTH.mainImageAlt],
+    ["caseStudy", "현장 사례는", LOCAL_SEO_MAX_LENGTH.caseStudy],
+  ];
+  for (const [field, subject, max] of lengthChecks) {
+    if (v(values, field).length > max) {
+      errors.push({ code: "too_long", fields: [field], message: `${subject} ${max}자 이내로 입력해주세요.` });
+    }
+  }
+
+  const imageUrl = v(values, "mainImageUrl");
+  if (imageUrl && imageUrl.length <= LOCAL_SEO_MAX_LENGTH.mainImageUrl && !isSafeExternalUrl(imageUrl)) {
+    errors.push({
+      code: "invalid_url",
+      fields: ["mainImageUrl"],
+      message: "대표 사진 URL은 http:// 또는 https://로 시작하는 주소만 입력할 수 있습니다.",
+    });
+  }
+}
+
+/** 문자열 안에 keyword가 몇 번 나오는지(겹치지 않게, 대소문자 무시) */
+export function countKeyword(text: string, keyword: string): number {
+  const needle = keyword.trim().toLowerCase();
+  if (!needle) return 0;
+  const haystack = text.toLowerCase();
+  let count = 0;
+  for (let i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + needle.length)) {
+    count += 1;
+  }
+  return count;
+}
+
+/**
+ * 검색엔진 스팸으로 보일 수 있는 상태를 경고한다(저장은 막지 않음).
+ * - 키워드 과다 반복: 대표 문구+소개 문구에 같은 키워드가 KEYWORD_REPEAT_LIMIT회 초과
+ * - 얇은 페이지: 소개 문구가 THIN_DESCRIPTION_MIN_LENGTH자 미만이고 대표 사진·현장 사례가 모두 없음
+ */
+export function collectSeoQualityWarnings(values: UploadValues): ValidationIssue[] {
+  const warnings: ValidationIssue[] = [];
+  const keyword = v(values, "keyword");
+  const body = `${v(values, "heroText")}\n${v(values, "description")}`;
+  const repeats = countKeyword(body, keyword);
+  if (keyword && repeats > KEYWORD_REPEAT_LIMIT) {
+    warnings.push({
+      code: "keyword_overuse",
+      fields: ["heroText", "description"],
+      message: `대표·소개 문구에 키워드 "${keyword}"가 ${repeats}번 들어 있습니다(${KEYWORD_REPEAT_LIMIT}번 이하 권장). 억지 반복은 검색엔진에서 스팸으로 볼 수 있습니다.`,
+    });
+  }
+  const description = v(values, "description");
+  if (
+    description.length < THIN_DESCRIPTION_MIN_LENGTH &&
+    !v(values, "mainImageUrl") &&
+    !v(values, "caseStudy")
+  ) {
+    warnings.push({
+      code: "thin_page",
+      fields: ["description", "mainImageUrl", "caseStudy"],
+      message: `내용이 적은 페이지입니다(소개 문구 ${description.length}자, 사진·현장 사례 없음). 소개 문구를 ${THIN_DESCRIPTION_MIN_LENGTH}자 이상으로 늘리거나 사진·현장 사례를 넣으면 검색 노출에 유리합니다.`,
+    });
+  }
+  return warnings;
+}
+
 /**
  * 여러 행을 검사한다. 행 순서대로 처리하며, 유사도는 "같은 키워드의 기존
  * 페이지·대기열 + 이 파일에서 앞에 있는 행(유사도 외 오류가 없는 행)"과 비교한다.
@@ -259,6 +355,7 @@ export function checkBulkUploadRows(
     const warnings: ValidationIssue[] = [...row.warnings];
 
     checkRegionKeyword(values, errors);
+    checkLocalSeoFields(values, errors);
     errors.push(...validated.errors);
     warnings.push(...validated.warnings);
 
@@ -273,6 +370,7 @@ export function checkBulkUploadRows(
 
     const faqs = collectFaqs(values, errors);
     warnings.push(...collectFactWarnings(values));
+    warnings.push(...collectSeoQualityWarnings(values));
 
     const region = v(values, "region");
     const keyword = v(values, "keyword");
@@ -350,6 +448,11 @@ export function checkBulkUploadRows(
         seo_title: orNull(v(values, "seoTitle")),
         seo_description: orNull(v(values, "seoDescription")),
         faqs,
+        city: orNull(v(values, "city")),
+        city_slug: orNull(v(values, "citySlug").toLowerCase()),
+        main_image_url: orNull(v(values, "mainImageUrl")),
+        main_image_alt: orNull(v(values, "mainImageAlt")),
+        case_study: orNull(v(values, "caseStudy")),
         max_similarity: similarity?.score ?? null,
       },
     };

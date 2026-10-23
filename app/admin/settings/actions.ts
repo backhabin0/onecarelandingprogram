@@ -98,16 +98,22 @@ export interface AutoPublishActionResult {
 export async function updateAutoPublishSettingsAction(input: {
   enabled: unknown;
   dailyLimit: unknown;
+  noindexThinPages: unknown;
 }): Promise<AutoPublishActionResult> {
   await requireUser();
 
-  if (typeof input.enabled !== "boolean" || typeof input.dailyLimit !== "number") {
+  if (
+    typeof input.enabled !== "boolean" ||
+    typeof input.dailyLimit !== "number" ||
+    typeof input.noindexThinPages !== "boolean"
+  ) {
     return { success: false, error: "잘못된 요청입니다." };
   }
 
   const result = await updateAutoPublishSettings({
     enabled: input.enabled,
     dailyLimit: input.dailyLimit,
+    noindexThinPages: input.noindexThinPages,
   });
   if (result.success) revalidatePath("/admin/settings");
   return result;

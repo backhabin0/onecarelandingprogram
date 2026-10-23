@@ -24,6 +24,11 @@ export type BulkUploadField =
   | "faqAnswer2"
   | "faqQuestion3"
   | "faqAnswer3"
+  | "city"
+  | "citySlug"
+  | "mainImageUrl"
+  | "mainImageAlt"
+  | "caseStudy"
   | "slug";
 
 export interface BulkUploadColumn {
@@ -72,6 +77,22 @@ export const BULK_UPLOAD_COLUMNS: readonly BulkUploadColumn[] = [
   { field: "faqAnswer2", header: "FAQ 답변2", example: "", width: 30 },
   { field: "faqQuestion3", header: "FAQ 질문3", example: "", width: 20 },
   { field: "faqAnswer3", header: "FAQ 답변3", example: "", width: 30 },
+  // 7단계에서 추가한 칸. 예전 양식(이 칸 없음)도 그대로 읽을 수 있도록 맨 뒤에 둔다
+  // (머리글 없이 붙여넣은 표도 앞 20칸은 예전과 같은 순서로 읽힌다).
+  { field: "city", header: "시/군", example: "강남구", width: 10 },
+  { field: "citySlug", header: "city_slug", example: "gangnam-gu", width: 14 },
+  { field: "mainImageUrl", header: "대표 사진 URL", example: "", width: 30 },
+  { field: "mainImageAlt", header: "사진 설명(alt)", example: "", width: 24 },
+  { field: "caseStudy", header: "현장 사례", example: "", width: 40 },
+];
+
+/** 손님이 직접 채우는 칸(프롬프트 만들기에서 AI가 채우지 않고 빈칸으로 둠) */
+export const CUSTOMER_ONLY_FIELDS: readonly BulkUploadField[] = [
+  "city",
+  "citySlug",
+  "mainImageUrl",
+  "mainImageAlt",
+  "caseStudy",
 ];
 
 /**

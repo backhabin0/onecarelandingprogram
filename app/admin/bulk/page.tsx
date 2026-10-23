@@ -27,7 +27,7 @@ export default async function AdminBulkUploadPage({ searchParams }: AdminBulkUpl
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="대량 등록"
+        title="AI 대량 생성"
         description="엑셀 파일이나 AI가 만든 표로 여러 랜딩페이지를 한 번에 검사하고 공개 대기열에 넣습니다."
         action={
           <Link
@@ -39,7 +39,7 @@ export default async function AdminBulkUploadPage({ searchParams }: AdminBulkUpl
         }
       />
 
-      <nav className="flex flex-wrap gap-1" aria-label="대량 등록 방법">
+      <nav className="flex flex-wrap gap-1" aria-label="AI 대량 생성 방법">
         {TABS.map((item) => {
           const active = item.key === tab;
           return (

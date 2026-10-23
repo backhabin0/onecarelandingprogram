@@ -1,4 +1,5 @@
 import type { LandingPage } from "@/types/landing-page";
+import { buildHeadline } from "@/lib/local-seo";
 
 const DESCRIPTION_MAX_LENGTH = 160;
 const DEFAULT_TITLE = "OneCare";
@@ -9,9 +10,13 @@ function truncate(text: string, maxLength: number): string {
   return `${text.slice(0, maxLength - 1)}…`;
 }
 
-/** `제목 | 업체명` 형태의 자동 SEO title. 값이 비어 있으면 안전한 fallback을 사용한다. */
+/**
+ * `제목 | 업체명` 형태의 자동 SEO title. 값이 비어 있으면 안전한 fallback을 사용한다.
+ * 7단계: 지역·키워드가 있는 페이지(대기열에서 공개)는 제목 앞쪽에 "지역 키워드"가 오도록
+ * H1과 같은 머리말(buildHeadline)을 쓴다.
+ */
 export function buildSeoTitle(landingPage: LandingPage): string {
-  const title = landingPage.title.trim();
+  const title = buildHeadline(landingPage.title, landingPage.region ?? null, landingPage.keyword ?? null);
   const businessName = landingPage.business_name.trim();
 
   if (title && businessName) return `${title} | ${businessName}`;

@@ -1,6 +1,8 @@
 import type { LandingPage } from "@/types/landing-page";
 import type { ResolvedFaq } from "@/types/seo";
 import type { ResolvedLandingPageSeo } from "@/lib/seo-resolver";
+import { getAbsoluteUrl } from "@/lib/site";
+import type { BreadcrumbItem } from "@/lib/local-seo";
 
 const SCHEMA_CONTEXT = "https://schema.org";
 
@@ -65,10 +67,39 @@ export function buildOrganizationJsonLd(
       : {}),
     ...(landingPage.main_image_url ? { image: landingPage.main_image_url } : {}),
     ...(landingPage.logo_url ? { logo: landingPage.logo_url } : {}),
-    ...(resolvedSeo.serviceArea ? { areaServed: resolvedSeo.serviceArea } : {}),
+    ...areaServedOf(landingPage, resolvedSeo),
     ...(resolvedSeo.businessCategory
       ? { knowsAbout: [resolvedSeo.businessCategory] }
       : {}),
+  };
+}
+
+/**
+ * 서비스 지역(areaServed). 관리자가 SEO 설정에 "서비스 지역"을 직접 넣었으면 그 글자를,
+ * 아니면 대기열에서 공개된 페이지의 시/군·지역으로 AdministrativeArea를 만든다(7단계).
+ * 둘 다 없으면 생략한다(추측해서 채우지 않음).
+ */
+function areaServedOf(landingPage: LandingPage, resolvedSeo: ResolvedLandingPageSeo) {
+  if (resolvedSeo.serviceArea) return { areaServed: resolvedSeo.serviceArea };
+  const name = [landingPage.city, landingPage.region]
+    .map((v) => v?.trim())
+    .filter(Boolean)
+    .join(" ");
+  return name ? { areaServed: { "@type": "AdministrativeArea", name } } : {};
+}
+
+/** 화면에 보이는 경로(홈 > 시/군 > 페이지)와 같은 BreadcrumbList */
+export function buildBreadcrumbJsonLd(items: readonly BreadcrumbItem[]) {
+  if (items.length < 2) return null;
+  return {
+    "@context": SCHEMA_CONTEXT,
+    "@type": "BreadcrumbList",
+    itemListElement: items.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.name,
+      item: getAbsoluteUrl(item.path),
+    })),
   };
 }
 

@@ -36,6 +36,7 @@ function values(i: number, patch: UploadValues = {}): UploadValues {
     faqQuestion1: "주차 되나요?",
     faqAnswer1: "네",
     seoTitle: `지역${i} 헬스장 SEO`,
+    mainImageUrl: `https://img.example/${i}.jpg`,
     ...patch,
   };
 }

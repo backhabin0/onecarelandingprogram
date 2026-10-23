@@ -167,6 +167,22 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
     return this;
   }
 
+  gte(column: string, value: string | number) {
+    this.where.push({ sql: `${ident(column)} >= ?`, params: [value] });
+    return this;
+  }
+
+  lt(column: string, value: string | number) {
+    this.where.push({ sql: `${ident(column)} < ?`, params: [value] });
+    return this;
+  }
+
+  is(column: string, value: null) {
+    if (value !== null) throw new Error("[pglite-supabase] is()는 null만 지원");
+    this.where.push({ sql: `${ident(column)} is null`, params: [] });
+    return this;
+  }
+
   ilike(column: string, pattern: string) {
     this.where.push({ sql: `${ident(column)} ilike ?`, params: [pattern] });
     return this;

@@ -28,7 +28,7 @@ export default async function EditQueueItemPage({ params }: EditQueueItemPagePro
     <div>
       <PageHeader
         title="대기열 항목 수정"
-        description={`${item.region} · ${item.keyword} — 대량 등록과 같은 규칙으로 다시 검사한 뒤 저장합니다.`}
+        description={`${item.region} · ${item.keyword} — AI 대량 생성과 같은 규칙으로 다시 검사한 뒤 저장합니다.`}
         action={
           <Link href="/admin/queue" className="text-sm font-medium text-blue-600 hover:text-blue-700">
             ← 공개 대기열로 돌아가기

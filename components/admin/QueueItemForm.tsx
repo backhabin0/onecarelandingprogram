@@ -7,7 +7,12 @@ import FormField from "@/components/admin/FormField";
 import { updateQueueItemAction } from "@/app/admin/queue/actions";
 import type { BulkUploadField } from "@/lib/bulk-upload/columns";
 import type { UploadValues } from "@/lib/bulk-upload/parse";
-import { FAQ_MAX_LENGTH, LANDING_PAGE_MAX_LENGTH, SEO_MAX_LENGTH } from "@/lib/landing-page-validation";
+import {
+  FAQ_MAX_LENGTH,
+  LANDING_PAGE_MAX_LENGTH,
+  LOCAL_SEO_MAX_LENGTH,
+  SEO_MAX_LENGTH,
+} from "@/lib/landing-page-validation";
 import { mockTemplates } from "@/lib/mock-data";
 import { QUEUE_STATE_LABELS } from "@/lib/publish-queue-labels";
 import type { LandingPageQueueState } from "@/types/publish-queue";
@@ -48,6 +53,11 @@ const BASIC_FIELDS: TextField[] = [
   { field: "address", label: "주소", maxLength: LANDING_PAGE_MAX_LENGTH.address },
   { field: "seoTitle", label: "SEO 제목", maxLength: SEO_MAX_LENGTH.title },
   { field: "seoDescription", label: "SEO 설명", maxLength: SEO_MAX_LENGTH.description, multiline: true },
+  { field: "city", label: "시/군", maxLength: LOCAL_SEO_MAX_LENGTH.city, hint: "예: 군포시. city_slug와 함께 입력" },
+  { field: "citySlug", label: "city_slug", hint: "예: gunpo. 지역 모음 페이지 /area/city_slug" },
+  { field: "mainImageUrl", label: "대표 사진 URL", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageUrl },
+  { field: "mainImageAlt", label: "사진 설명(alt)", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageAlt, hint: "비우면 '지역 키워드 현장'으로 자동" },
+  { field: "caseStudy", label: "현장 사례", maxLength: LOCAL_SEO_MAX_LENGTH.caseStudy, multiline: true, hint: "직접 다녀온 현장 이야기(선택)" },
 ];
 
 const FAQ_FIELDS = [1, 2, 3] as const;

@@ -304,5 +304,10 @@ export function queueRowToValues(row: LandingPageQueueRow): UploadValues {
     faqAnswer2: faq(1).answer,
     faqQuestion3: faq(2).question,
     faqAnswer3: faq(2).answer,
+    city: row.city ?? "",
+    citySlug: row.city_slug ?? "",
+    mainImageUrl: row.main_image_url ?? "",
+    mainImageAlt: row.main_image_alt ?? "",
+    caseStudy: row.case_study ?? "",
   };
 }

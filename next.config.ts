@@ -25,8 +25,29 @@ async function headers() {
   ];
 }
 
+/**
+ * 7단계: 공개 랜딩페이지 이미지(next/image) 최적화 허용 범위.
+ * 이 프로젝트의 Supabase Storage 공개 경로만 허용한다(lib/landing-images.ts와 같은 기준).
+ * 엑셀로 받은 그 밖의 외부 사진 주소는 컴포넌트에서 unoptimized로 원본을 보여준다.
+ */
+function supabaseImagePatterns(): NonNullable<NonNullable<NextConfig["images"]>["remotePatterns"]> {
+  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!raw) return [];
+  try {
+    const { hostname } = new URL(raw);
+    return [{ protocol: "https", hostname, pathname: "/storage/v1/object/public/**" }];
+  } catch {
+    return [];
+  }
+}
+
 const nextConfig: NextConfig = {
   headers,
+  images: {
+    remotePatterns: supabaseImagePatterns(),
+    // 최적화 서버가 리다이렉트를 따라가 허용 목록 밖으로 나가지 않게 한다.
+    maximumRedirects: 0,
+  },
 };
 
 export default nextConfig;

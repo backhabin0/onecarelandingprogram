@@ -39,7 +39,7 @@ export default function QueueTable({ items, isFiltered }: QueueTableProps) {
   if (items.length === 0) {
     return (
       <p className="px-4 py-12 text-center text-sm text-slate-500">
-        {isFiltered ? "조건에 맞는 항목이 없습니다." : "대기열이 비어 있습니다. 대량 등록에서 엑셀 파일을 올려주세요."}
+        {isFiltered ? "조건에 맞는 항목이 없습니다." : "대기열이 비어 있습니다. AI 대량 생성에서 엑셀 파일이나 표를 올려주세요."}
       </p>
     );
   }

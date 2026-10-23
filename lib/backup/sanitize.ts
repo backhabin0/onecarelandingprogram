@@ -11,7 +11,6 @@ import {
   LANDING_PAGE_QUEUE_SOURCES,
   LANDING_PAGE_QUEUE_STATES,
   type LandingPageQueueFaq,
-  type LandingPageQueueRow,
   type LandingPageQueueSource,
   type LandingPageQueueState,
 } from "@/types/publish-queue";
@@ -22,6 +21,9 @@ import {
   type BackupEventRow,
   type BackupFile,
   type BackupLandingPage,
+  type BackupQueueRow,
+  LANDING_PAGE_LOCAL_SEO_KEYS,
+  QUEUE_LOCAL_SEO_KEYS,
   type BackupSiteVerificationSettings,
   type BackupStorageManifestEntry,
 } from "@/types/backup";
@@ -99,6 +101,8 @@ function sanitizeLandingPage(item: unknown, version: number): BackupLandingPage 
   if (version >= 2 && r.published_at !== null && !isIsoDateString(r.published_at)) {
     return null;
   }
+  const localSeo = pickNullableStrings(r, LANDING_PAGE_LOCAL_SEO_KEYS, version >= 3);
+  if (!localSeo) return null;
 
   const status: LandingPageStatus = r.status;
 
@@ -122,7 +126,7 @@ function sanitizeLandingPage(item: unknown, version: number): BackupLandingPage 
   if (version >= 2) {
     page.published_at = r.published_at as string | null;
   }
-  return page;
+  return { ...page, ...localSeo };
 }
 
 function sanitizeSeoSettings(item: unknown): LandingPageSeoSettings | null {
@@ -303,9 +307,30 @@ function sanitizeQueueFaqs(value: unknown): LandingPageQueueFaq[] | null {
   return faqs;
 }
 
-function sanitizeQueueRow(item: unknown): LandingPageQueueRow | null {
+/**
+ * version 3 이상이면 keys가 모두 문자열 또는 null이어야 하고(아니면 null 반환), 그 값만
+ * 새 객체에 담는다. 그보다 예전 형식이면 빈 객체 — 복구 때 그 칸을 쓰지 않게 한다.
+ */
+function pickNullableStrings<K extends string>(
+  r: Record<string, unknown>,
+  keys: readonly K[],
+  required: boolean
+): Partial<Record<K, string | null>> | null {
+  const picked: Partial<Record<K, string | null>> = {};
+  if (!required) return picked;
+  for (const key of keys) {
+    const value = r[key];
+    if (!isNullableString(value)) return null;
+    picked[key] = value;
+  }
+  return picked;
+}
+
+function sanitizeQueueRow(item: unknown, version: number): BackupQueueRow | null {
   if (!isPlainRecord(item)) return null;
   const r = item;
+  const localSeo = pickNullableStrings(r, QUEUE_LOCAL_SEO_KEYS, version >= 3);
+  if (!localSeo) return null;
 
   if (!isUuid(r.id)) return null;
   if (
@@ -398,6 +423,7 @@ function sanitizeQueueRow(item: unknown): LandingPageQueueRow | null {
     landing_page_id: r.landing_page_id,
     batch_id: r.batch_id,
     created_at: r.created_at,
+    ...localSeo,
   };
 }
 
@@ -477,7 +503,9 @@ export function parseAndValidateBackupFile(rawText: string): ParseBackupResult {
   );
   // 대기열은 version 2부터 들어 있다.
   const publishQueue =
-    version >= 2 ? sanitizeArray(data.publishQueue, sanitizeQueueRow) : { rows: [], invalid: 0 };
+    version >= 2
+      ? sanitizeArray(data.publishQueue, (item) => sanitizeQueueRow(item, version))
+      : { rows: [], invalid: 0 };
 
   if (landingPages.invalid > 0) invalidCounts.landingPages = landingPages.invalid;
   if (seoSettings.invalid > 0) invalidCounts.seoSettings = seoSettings.invalid;

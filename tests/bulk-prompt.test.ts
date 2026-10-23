@@ -173,9 +173,10 @@ describe("프롬프트 만들기", () => {
       corpus: [],
       thresholds: DEFAULT_SIMILARITY_THRESHOLDS,
     });
-    expect(result.rows.map((r) => [r.queueRow.slug, r.status])).toEqual([
-      ["gangnam-gym", "pass"],
-      ["seocho-gym", "pass"],
+    // 오류 없이 저장 가능. 소개 문구가 짧고 사진·사례가 없어 "얇은 페이지" 경고만 남는다(7단계).
+    expect(result.rows.map((r) => [r.queueRow.slug, r.errors, r.warnings.map((w) => w.code)])).toEqual([
+      ["gangnam-gym", [], ["thin_page"]],
+      ["seocho-gym", [], ["thin_page"]],
     ]);
   });
 });
@@ -296,7 +297,7 @@ describe("사실 정보 경고(전화번호·금액)", () => {
       { existingSlugs: [], existingPairs: [], corpus: [], thresholds: DEFAULT_SIMILARITY_THRESHOLDS }
     ).rows;
     expect(row.status).toBe("warning");
-    expect(row.warnings.map((w) => w.code)).toEqual(["contains_price"]);
+    expect(row.warnings.map((w) => w.code)).toEqual(["contains_price", "thin_page"]);
     expect(row.errors).toEqual([]);
   });
 });

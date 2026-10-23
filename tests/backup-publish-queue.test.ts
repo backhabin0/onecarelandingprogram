@@ -1,5 +1,5 @@
 /**
- * 백업 형식 version 2: landing_pages.published_at과 공개 대기열(landing_page_queue)을
+ * 백업 형식 version 3(7단계에서 지역 SEO 칸 추가) / version 2: landing_pages.published_at과 공개 대기열(landing_page_queue)을
  * 백업·복구에 반영했는지 확인한다. 가짜 Supabase 클라이언트를 쓰므로 실제 DB 연결은 없다.
  */
 import { describe, expect, it } from "vitest";
@@ -36,6 +36,13 @@ function landingPage(i: number, overrides: Row = {}): Row {
     status: "public",
     // 짝수 번호만 대기열에서 공개된 페이지
     published_at: i % 2 === 0 ? iso(BASE + i * 1000) : null,
+    // version 3: 지역 SEO 칸(대기열에서 공개된 짝수 번호에만 값)
+    region: i % 2 === 0 ? `지역${i}` : null,
+    keyword: i % 2 === 0 ? "헬스장" : null,
+    city: i % 2 === 0 ? "군포시" : null,
+    city_slug: i % 2 === 0 ? "gunpo" : null,
+    main_image_alt: i % 4 === 0 ? `지역${i} 헬스장 현장` : null,
+    case_study: i % 4 === 0 ? "현장 이야기" : null,
     created_at: iso(BASE + Math.floor(i / 3) * 1000),
     updated_at: iso(BASE + i * 1000),
     ...overrides,
@@ -66,6 +73,11 @@ function queueRow(i: number, overrides: Row = {}): Row {
     service_area: `지역${i}`,
     business_category: "헬스장",
     faqs: [{ question: "주차 되나요?", answer: "네" }],
+    city: i % 3 === 0 ? null : "군포시",
+    city_slug: i % 3 === 0 ? null : "gunpo",
+    main_image_url: i % 5 === 0 ? `https://img.example/${i}.jpg` : null,
+    main_image_alt: null,
+    case_study: i % 5 === 0 ? "현장 사례" : null,
     source: i % 2 === 0 ? "ai" : "excel",
     state,
     validation_errors: state === "failed" ? [{ code: "slug_conflict", fields: ["slug"], message: "이미 사용 중인 URL입니다." }] : [],
@@ -123,7 +135,7 @@ function parse(text: string): BackupFile {
   return parsed.backup;
 }
 
-describe("백업 내보내기(version 2)", () => {
+describe("백업 내보내기(version 3)", () => {
   it("published_at과 대기열 전체(1,000행 넘어도)를 담는다", async () => {
     const pages = Array.from({ length: 1200 }, (_, i) => landingPage(i));
     const queue = Array.from({ length: 1100 }, (_, i) => queueRow(i));
@@ -132,7 +144,7 @@ describe("백업 내보내기(version 2)", () => {
     const { success, backup } = await buildBackupFile();
 
     expect(success).toBe(true);
-    expect(backup!.version).toBe(2);
+    expect(backup!.version).toBe(3);
     expect(backup!.counts).toMatchObject({ landingPages: 1200, publishQueue: 1100 });
     expect(sortById(backup!.data.landingPages as Row[])).toEqual(sortById(pages));
     expect(sortById(backup!.data.publishQueue as unknown as Row[])).toEqual(sortById(queue));
@@ -140,7 +152,7 @@ describe("백업 내보내기(version 2)", () => {
 });
 
 describe("백업 파일 읽기", () => {
-  it("version 2: published_at과 대기열을 그대로 읽는다", () => {
+  it("version 3: published_at·지역 SEO 칸과 대기열을 그대로 읽는다", () => {
     const backup = parse(
       backupFile({
         landingPages: [landingPage(0), landingPage(1)] as never,
@@ -169,9 +181,9 @@ describe("백업 파일 읽기", () => {
   });
 
   it("지원하지 않는 버전은 거부", () => {
-    expect(parseAndValidateBackupFile(backupFile({}, 3))).toMatchObject({
+    expect(parseAndValidateBackupFile(backupFile({}, 4))).toMatchObject({
       success: false,
-      error: "지원하지 않는 백업 버전입니다. (version: 3)",
+      error: "지원하지 않는 백업 버전입니다. (version: 4)",
     });
   });
 
@@ -238,7 +250,51 @@ describe("백업 복구", () => {
     expect(sortById(target.tables.landing_page_queue)).toEqual(sortById(queue));
   });
 
-  it("version 2 복구는 현재 published_at을 백업 값으로 바꾼다(null 포함)", async () => {
+  it("version 2 파일(지역 SEO 칸 없음)도 읽고, 복구할 때 현재 지역 SEO 값은 그대로 둔다", async () => {
+    const strip = (row: Row, keys: string[]) => {
+      const copy = { ...row };
+      for (const key of keys) delete copy[key];
+      return copy;
+    };
+    const pageKeys = ["region", "keyword", "city", "city_slug", "main_image_alt", "case_study"];
+    const queueKeys = ["city", "city_slug", "main_image_url", "main_image_alt", "case_study"];
+    const target = setFakeSupabase(
+      createDb({
+        landingPages: [landingPage(0, { title: "현재", city: "안양시", case_study: "현재 사례" })],
+        queue: [queueRow(1, { city: "안양시", city_slug: "anyang" })],
+      })
+    );
+    const parsed = parseAndValidateBackupFile(
+      backupFile(
+        {
+          landingPages: [strip(landingPage(0, { title: "백업" }), pageKeys)] as never,
+          publishQueue: [strip(queueRow(1, { title: "백업 대기열" }), queueKeys)] as never,
+        },
+        2
+      )
+    );
+    expect(parsed.success).toBe(true);
+    expect(parsed.invalidCounts).toEqual({});
+    expect(parsed.backup!.data.landingPages[0]).not.toHaveProperty("city");
+
+    expect((await executeMergeRestore(parsed.backup!)).status).toBe("success");
+    expect(target.tables.landing_pages[0]).toMatchObject({ title: "백업", city: "안양시", case_study: "현재 사례" });
+    expect(target.tables.landing_page_queue[0]).toMatchObject({ title: "백업 대기열", city: "안양시", city_slug: "anyang" });
+  });
+
+  it("version 3에서 지역 SEO 칸이 빠졌거나 문자열이 아니면 그 행만 제외", () => {
+    const missing = landingPage(0);
+    delete missing.city;
+    const parsed = parseAndValidateBackupFile(
+      backupFile({
+        landingPages: [missing, landingPage(1, { case_study: 3 })] as never,
+        publishQueue: [queueRow(0, { city_slug: false })] as never,
+      })
+    );
+    expect(parsed.invalidCounts).toEqual({ landingPages: 2, publishQueue: 1 });
+  });
+
+  it("복구는 현재 published_at을 백업 값으로 바꾼다(null 포함)", async () => {
     const target = setFakeSupabase(
       createDb({
         landingPages: [

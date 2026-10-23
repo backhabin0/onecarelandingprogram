@@ -6,8 +6,26 @@ import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import { isReservedSlug } from "@/lib/slug";
 import type { LandingPageFaq, LandingPageSeoSettings } from "@/types/seo";
 import type { ConsultationRequest } from "@/types/consultation-request";
-import type { LandingPageQueueRow } from "@/types/publish-queue";
-import type { BackupEventRow, BackupFile, BackupLandingPage } from "@/types/backup";
+import {
+  LANDING_PAGE_LOCAL_SEO_KEYS,
+  QUEUE_LOCAL_SEO_KEYS,
+  type BackupEventRow,
+  type BackupFile,
+  type BackupLandingPage,
+  type BackupQueueRow,
+} from "@/types/backup";
+
+/**
+ * 백업 행에 들어 있는 칸만 골라 담는다. 예전 형식 백업에는 그 칸이 없으므로
+ * 복구할 때 쓰지 않아 현재 DB 값이 유지된다(한 파일의 행은 모두 같은 형식).
+ */
+function presentKeys<K extends string>(row: Partial<Record<K, unknown>>, keys: readonly K[]) {
+  const picked: Partial<Record<K, unknown>> = {};
+  for (const key of keys) {
+    if (key in row) picked[key] = row[key];
+  }
+  return picked;
+}
 
 const WRITE_CHUNK_SIZE = 500;
 
@@ -90,7 +108,7 @@ export interface RestorePlan {
     orphanCount: number;
   };
   publishQueue: {
-    rowsToWrite: LandingPageQueueRow[];
+    rowsToWrite: BackupQueueRow[];
     toInsertCount: number;
     toUpdateCount: number;
     /** slug 또는 (region, keyword)가 현재 다른 대기열 항목과 겹치거나 백업 안에서 겹쳐 건너뜀 */
@@ -556,6 +574,7 @@ export async function executeMergeRestore(
             // version 1 백업에는 published_at이 없다 → 쓰지 않아 현재 값을 유지한다.
             // (한 파일 안의 행은 모두 같은 version이라 청크 안에서 키가 섞이지 않는다)
             ...("published_at" in r ? { published_at: r.published_at } : {}),
+            ...presentKeys(r, LANDING_PAGE_LOCAL_SEO_KEYS),
             created_at: r.created_at,
             updated_at: r.updated_at,
           })),
@@ -711,6 +730,7 @@ export async function executeMergeRestore(
           published_at: r.published_at,
           landing_page_id: r.landing_page_id,
           batch_id: r.batch_id,
+          ...presentKeys(r, QUEUE_LOCAL_SEO_KEYS),
           created_at: r.created_at,
         })),
         { onConflict: "id" }

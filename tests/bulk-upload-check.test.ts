@@ -32,6 +32,8 @@ function values(i: number, patch: UploadValues = {}): UploadValues {
     // 행마다 전혀 다른 문구(유사도 0)
     heroText: `고유문구${i}`.repeat(1),
     description: `설명-${i}-${"가나다라마바사아자차카타파하".slice(i % 10)}`,
+    // 대표 사진이 있으면 "얇은 페이지" 경고가 나지 않는다(얇은 페이지 검사는 따로 확인)
+    mainImageUrl: `https://img.example/${i}.jpg`,
     ...patch,
   };
 }
@@ -90,6 +92,11 @@ describe("행 검사", () => {
         { question: "주차 되나요?", answer: "네" },
         { question: "가격은?", answer: "상담 후 안내" },
       ],
+      city: null,
+      city_slug: null,
+      main_image_url: "https://img.example/0.jpg",
+      main_image_alt: null,
+      case_study: null,
       max_similarity: null,
     });
     expect(decideQueueState(result.rows[0], false)).toBe("ready");
