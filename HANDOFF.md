@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-23 (8-2 Next.js 보안 업데이트 완료, 운영 DB 미적용)
+마지막 업데이트: 2026-10-23 (8-3 운영 DB migration 013~016 적용 완료, 코드 배포 전)
 
 ## 배경
 
@@ -415,7 +415,7 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 
 - **제목·H1**: 지역·키워드가 있는 페이지는 "지역 키워드"가 앞쪽에 오도록 다듬음(`buildHeadline` — 이미 들어 있으면 그대로, 빠진 것만 앞에 붙여 같은 말 반복 없음). H1은 페이지에 1개. 자동 SEO 제목도 같은 머리말 + " | 업체명". 관리자가 SEO 제목을 직접 넣었으면 그대로 사용
 - meta description·canonical·OG는 기존 resolver 그대로(페이지마다 고유한 소개 문구 기반)
-- **구조화 데이터**: WebPage, LocalBusiness/Organization(+ **areaServed**: SEO 설정의 서비스 지역 글자, 없으면 시/군+지역 AdministrativeArea, 둘 다 없으면 생략), FAQPage(화면 FAQ와 같음), **BreadcrumbList**(홈 > 시/군 모음 > 페이지 — 화면 상단에도 같은 경로 표시)
+- **구조화 데이터**: WebPage, LocalBusiness/Organization(+ **areaServed**: SEO 설정의 서비스 지역 글자, 없으면 시/군+지역 AdministrativeArea, 둘 다 없으면 생략), FAQPage(화면 FAQ와 같음), **BreadcrumbList**(시/군 모음 › 페이지 — 화면 상단에도 같은 경로 표시. 처음엔 "홈"으로 시작했으나 8-3에서 뺌: 사이트 루트가 관리자 로그인으로 넘어가기 때문)
 - **이미지**: next/image(fill, sizes, 첫 화면 이미지는 `fetchPriority="high"` — Next 16에서 `priority`는 deprecated). alt는 입력값 → "지역 키워드 현장" → "업체명 대표 이미지". Supabase Storage 공개 경로만 최적화(`next.config.ts` `images.remotePatterns`, `maximumRedirects: 0`), 엑셀로 받은 외부 주소는 원본(unoptimized). 사진이 없거나 깨지면 상자째 렌더링하지 않음. 템플릿 B 배경 사진도 alt 부여
 - **현장 사례**가 있으면 '현장 사례' 섹션
 - **내부 링크**(페이지 하단): 같은 지역 다른 서비스(같은 시/군·같은 지역·다른 키워드, 최대 5, 가나다순), 근처 지역 같은 서비스(같은 시/군·같은 키워드·다른 지역, 최대 5 — 위치 정보가 없어 지역 가나다순에서 현재 지역 다음부터 돌아가며 골라 링크가 고르게 퍼지게), 지역 모음 링크. 공개+noindex 아닌 페이지만. 미리보기에서는 출력 안 함
@@ -521,6 +521,57 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 정리: **운영 서버에 영향 있는 critical/high는 next 업데이트로 모두 해소**. 남은 것은 빌드 도구(source-map-js) 1건과 개발 도구(vitest·eslint)뿐
 - 권장(별도 지시 시): `npm audit fix`(메이저 변경 없음 — source-map-js 1.2.2, brace-expansion, vitest 3.2.7)를 한 번 적용하고 테스트 재확인. vitest 4 업그레이드는 운영 적용이 끝난 뒤
 
+## 8단계 — 8-3 운영 DB 백업 + migration 013~016 적용 ✅ (2026-10-23)
+
+방식: `supabase db push`·`migration repair`·001~012 재적용은 하지 않았다(운영에는 migration 기록 테이블이 없음). 파일 하나씩, 사용자 승인 후 `npx supabase db query --linked --project-ref jxatzdldyawjxgeepdiz -f <파일>`로 실행. 각 파일은 원본 그대로 앞뒤에 `begin;`/`commit;`만 붙여 **한 트랜잭션**으로 실행(중간 오류 시 전부 취소되도록).
+
+### 사전 점검(읽기 전용)
+
+| 항목 | 결과 |
+| --- | --- |
+| Postgres | 17.6 |
+| 013~016이 만들 테이블·칸·함수 | 없음(013이 쓰는 기존 `set_updated_at`만 있음) |
+| 확장 | pgcrypto 1.3·supabase_vault 0.3.1 설치됨, pg_cron 1.6.4 사용 가능(미설치) |
+| migration 기록(`supabase_migrations.schema_migrations`) | **없음** |
+| slug='area' 페이지 | 0(새 예약어와 충돌 없음) |
+| 역할 | `cli_login_postgres` 있음(CLI 관리 API 접속용 임시 로그인 역할 — `db query --linked`를 쓸 때마다 "Initialising login role..."로 갱신됨) |
+
+### 백업
+
+| 테이블 | DB 행 수 | 저장 행 수 | 일치 |
+| --- | --- | --- | --- |
+| landing_pages | 1,047 | 1,047 | ✅(id·slug 중복 없음) |
+| landing_page_events | 572 | 572 | ✅ |
+| landing_page_faqs | 12 | 12 | ✅ |
+| consultation_requests | 7 | 7 | ✅ |
+| landing_page_seo_settings | 6 | 6 | ✅ |
+| site_verification_settings | 1 | 1 | ✅ |
+
+- DB 덤프: `C:\Users\user\Documents\onecare-backup\2026-10-23_1853\`(저장소 밖) — `data\<테이블>.json`(200행씩 SELECT로 읽어 합침), `counts.json`, `schema.json`(칸 52·제약 24·인덱스 14·트리거 3·함수 1·RLS 정책 21(public+storage)·Storage 버킷 1·확장 5)
+- 관리자 JSON 백업: `C:\Users\user\Downloads\onecare-backup-20261023T095140Z.json`(4.2MB, version 1) — 랜딩 1,047 / SEO 6 / FAQ 12 / 상담 7 / 이벤트 572(덤프와 같음, 1,000행 잘림 없음)
+
+### 적용 결과
+
+| 순서 | 파일 | 결과 | 확인한 내용(읽기 전용 SELECT) | 사이트 확인(GET) | 관리자 대시보드(사용자) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 013_publish_queue.sql | ✅ exit 0 | 테이블 3개(queue·auto_publish_settings·publish_runs) RLS 켜짐·authenticated 정책 6개, `landing_pages.published_at`(기존 행 모두 null), 함수 2개(공개 함수 실행 권한 authenticated·postgres), 설정 1행(꺼짐·50) | 정상 | 정상 |
+| 2 | 014_bulk_upload_similarity_settings.sql | ✅ exit 0 | 유사도 기준 0.6/0.8 + check 제약 | 정상 | 정상 |
+| 3 | 015_auto_publish_indexnow.sql | ✅ exit 0 | 하루 개수 1~100, `publish_runs.trigger`, 함수 4개(`run_auto_publish` authenticated·postgres / `indexnow_caller_allowed` postgres만 / 조회·기록 함수 anon·authenticated — 함수 안에서 Vault 비밀값 확인, 아직 미등록이라 anon 호출은 모두 거절), IndexNow 테이블 2개 RLS·authenticated 조회 정책. pg_cron 미설치·미등록(계획대로) | 정상 | 정상 |
+| 4 | 016_local_seo_fields.sql | ✅ exit 0 | 랜딩 새 칸 6개(기존 1,047행 모두 null), 대기열 새 칸 5개, 지역·키워드 50자 제약(not valid), 시/군 부분 인덱스, `noindex_thin_pages`=false, 공개 함수가 새 칸·얇은 페이지 옵션 반영 | 정상 | 정상 |
+
+- 사이트 확인(매 단계 같음): 홈 `/` 307 → `/admin`(main 코드의 원래 동작), 랜딩 1개 200·제목 정상, `/login` 200, `/admin` 307 → `/login`, `sitemap.xml` 200·1,000개(배포 전이라 main의 1,000개 잘림 그대로)
+- 매 단계 데이터 그대로: 랜딩 1,047(공개 1,047) / SEO 6 / FAQ 12 / 상담 7, 대기열·실행 기록·IndexNow 기록 0
+- 되돌리기 SQL은 쓰지 않음(오류 없음)
+- 지금 상태: **운영 DB는 이 브랜치 코드가 필요로 하는 구조를 모두 갖춤**, 운영 코드는 아직 main(배포 안 함)
+
+### 배포 전 수정: 경로에서 "홈" 제거
+
+- 이유: 사이트 루트(`/`)가 관리자 로그인으로 넘어가는 주소라(운영 확인 중 발견) 경로 표시·BreadcrumbList에 "홈"이 들어가면 검색엔진에 좋지 않음
+- 랜딩 페이지(템플릿 A·B): 경로가 **"시/군 › 페이지"**로 시작(화면·BreadcrumbList 같음). 시/군이 없으면 항목이 1개라 경로 표시·BreadcrumbList 모두 생략(Google은 BreadcrumbList에 2개 이상 요구)
+- 지역 모음 페이지(`/area/{city_slug}`): "홈"을 빼면 경로가 "시/군" 1개뿐이라 경로 표시·BreadcrumbList를 넣지 않음(ItemList는 그대로)
+- 테스트: 템플릿 A/B 경로 항목이 `["군포시", "페이지"]`, 사이트 루트 링크·"홈" 없음, BreadcrumbList 위치 1·2, 시/군 없는 페이지는 생략, 모음 페이지에 경로·BreadcrumbList 없음. "홈"을 다시 넣으면 5개 실패하는 것 확인
+- `npm test` 457개 ✅ / `npx tsc --noEmit` ✅ / `npx eslint` ✅ / `npx next build` ✅
+
 ## 8-2 이후 운영 적용 체크리스트
 
 표시: 🙋 = 사용자가 직접 해야 함(대시보드 조작·결정·비밀값) / 🤖 = Claude가 할 수 있음(지시 후) / 🤝 = 함께
@@ -533,9 +584,10 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - [x] 🙋 hanapage.co.kr(Supabase `mozfqmsjjarpsjhfjrql`)은 **이번 범위에서 제외**(2026-10-23 결정)
 
 ### B. 운영 DB 적용(사용자 지시 후에만)
-- [ ] 🙋 운영 관리자 화면 > 설정 > 백업 및 복구에서 **백업 파일 다운로드**(현재 운영 코드의 백업도 1,000행에서 잘릴 수 있으므로, 필요하면 Supabase Dashboard > Database > Backups의 자동 백업 시각도 확인)
-- [ ] 🙋 migration 적용 승인 → 🤝 Supabase SQL Editor에서 **013 → 014 → 015 → 016 순서**로 실행(각 파일 실행 후 오류 없는지 확인). 실패하면 해당 번호부터 `supabase/rollback/0NN_down.sql`을 역순으로 실행
-- [ ] 🙋 Dashboard > Database > Extensions에서 **pg_cron 켜기** → `supabase/manual/015_cron_schedule.sql` [A] 실행 → `select * from cron.job`으로 `onecare-daily-auto-publish`(`0 0 * * *`) 확인
+- [x] 🙋 관리자 JSON 백업 다운로드 — `다운로드\onecare-backup-20261023T095140Z.json`(8-3, 1,000행 잘림 없이 전부 들어 있음)
+- [x] 🤖 DB 덤프(SELECT만) — `C:\Users\user\Documents\onecare-backup\2026-10-23_1853\`(8-3)
+- [x] 🤝 migration **013 → 014 → 015 → 016** 하나씩 적용 + 각 단계 확인(8-3, 아래 결과 표)
+- [ ] 🙋 Dashboard > Database > Extensions에서 **pg_cron 켜기** → `supabase/manual/015_cron_schedule.sql` [A] 실행 → `select * from cron.job`으로 `onecare-daily-auto-publish`(`0 0 * * *`) 확인 — 코드 배포 뒤 자동 공개를 켜기 전까지만 하면 됨(지금 켜도 설정이 꺼짐이라 아무것도 공개하지 않음)
 - [ ] 🙋 16자 이상 무작위 **CRON_SECRET** 만들기 → 같은 값을 Vault에 등록(`015_cron_schedule.sql` [B]) — 값은 git·채팅에 남기지 않기
 
 ### C. Vercel 환경변수·배포
@@ -561,6 +613,6 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 
 ## 다음 단계
 
-1. 8-3(사용자 지시): 체크리스트 B — 운영 백업 → migration 013 → 014 → 015 → 016을 하나씩 적용하며 확인
-2. 그 다음 C~F는 사용자 지시에 따라 한 단계씩
+1. 체크리스트 B 남은 것(pg_cron 켜기·CRON_SECRET/Vault — 사용자) → C(Vercel 환경변수, PR·배포 승인)
+2. 그 다음 D~F는 사용자 지시에 따라 한 단계씩
 3. (선택) 남은 npm audit 중 메이저 변경 없는 것(`npm audit fix`) 정리
