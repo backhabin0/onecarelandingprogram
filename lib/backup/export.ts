@@ -8,6 +8,7 @@ import { getStoragePathFromPublicUrl } from "@/lib/storage/landing-page-assets";
 import type { LandingPage } from "@/types/landing-page";
 import type { LandingPageFaq, LandingPageSeoSettings } from "@/types/seo";
 import type { ConsultationRequest } from "@/types/consultation-request";
+import type { LandingPageQueueRow } from "@/types/publish-queue";
 import {
   BACKUP_FORMAT,
   BACKUP_VERSION,
@@ -91,16 +92,23 @@ export interface BuildBackupFileResult {
 
 /**
  * 전체 백업 파일을 생성한다. read-only — 이 함수는 어떤 테이블도 수정하지
- * 않는다. 여섯 조회(landing_pages/seo/faqs/consultations/events/
- * site_verification_settings) 중 하나라도 실패하면 불완전한 백업을
+ * 않는다. 일곱 조회(landing_pages/seo/faqs/consultations/events/
+ * landing_page_queue/site_verification_settings) 중 하나라도 실패하면 불완전한 백업을
  * 반환하지 않고 즉시 실패로 처리한다.
  */
 export async function buildBackupFile(): Promise<BuildBackupFileResult> {
   try {
     const supabase = await getSupabaseServerClient();
 
-    const [landingPagesRes, seoRes, faqsRes, consultationsRes, eventsRes, verificationRes] =
-      await Promise.all([
+    const [
+      landingPagesRes,
+      seoRes,
+      faqsRes,
+      consultationsRes,
+      eventsRes,
+      queueRes,
+      verificationRes,
+    ] = await Promise.all([
         fetchAllTableRows<LandingPage>(supabase, "landing_pages", "*", [
           "created_at",
           "id",
@@ -125,6 +133,10 @@ export async function buildBackupFile(): Promise<BuildBackupFileResult> {
           "created_at",
           "id",
         ]),
+        fetchAllTableRows<LandingPageQueueRow>(supabase, "landing_page_queue", "*", [
+          "created_at",
+          "id",
+        ]),
         supabase
           .from("site_verification_settings")
           .select("google_site_verification, naver_site_verification")
@@ -138,6 +150,7 @@ export async function buildBackupFile(): Promise<BuildBackupFileResult> {
       faqsRes.error ??
       consultationsRes.error ??
       eventsRes.error ??
+      queueRes.error ??
       (verificationRes.error ? "검색엔진 인증 설정을 불러오지 못했습니다." : null);
 
     if (firstError) {
@@ -153,6 +166,7 @@ export async function buildBackupFile(): Promise<BuildBackupFileResult> {
       faqs: faqsRes.data.length,
       consultations: consultationsRes.data.length,
       events: eventsRes.data.length,
+      publishQueue: queueRes.data.length,
     };
 
     const backup: BackupFile = {
@@ -169,6 +183,7 @@ export async function buildBackupFile(): Promise<BuildBackupFileResult> {
         events: eventsRes.data,
         siteVerificationSettings: verificationRes.data ?? null,
         storageManifest: buildStorageManifest(landingPagesRes.data, seoRes.data),
+        publishQueue: queueRes.data,
       },
     };
 
@@ -190,6 +205,7 @@ const EMPTY_COUNTS: BackupCounts = {
   faqs: 0,
   consultations: 0,
   events: 0,
+  publishQueue: 0,
 };
 
 /** /admin/settings/backup 화면에 표시할 "현재 데이터 현황" — head count만 조회한다(행 데이터 없음). */
@@ -197,7 +213,7 @@ export async function getCurrentDataCounts(): Promise<GetCurrentDataCountsResult
   try {
     const supabase = await getSupabaseServerClient();
 
-    const [lp, seo, faqs, consultations, events] = await Promise.all([
+    const [lp, seo, faqs, consultations, events, queue] = await Promise.all([
       supabase.from("landing_pages").select("id", { count: "exact", head: true }),
       supabase
         .from("landing_page_seo_settings")
@@ -207,10 +223,11 @@ export async function getCurrentDataCounts(): Promise<GetCurrentDataCountsResult
         .from("consultation_requests")
         .select("id", { count: "exact", head: true }),
       supabase.from("landing_page_events").select("id", { count: "exact", head: true }),
+      supabase.from("landing_page_queue").select("id", { count: "exact", head: true }),
     ]);
 
     const firstError =
-      lp.error ?? seo.error ?? faqs.error ?? consultations.error ?? events.error;
+      lp.error ?? seo.error ?? faqs.error ?? consultations.error ?? events.error ?? queue.error;
     if (firstError) {
       console.error("[backup] current counts error:", firstError.message);
       return { data: EMPTY_COUNTS, error: "현재 데이터 현황을 불러오지 못했습니다." };
@@ -223,6 +240,7 @@ export async function getCurrentDataCounts(): Promise<GetCurrentDataCountsResult
         faqs: faqs.count ?? 0,
         consultations: consultations.count ?? 0,
         events: events.count ?? 0,
+        publishQueue: queue.count ?? 0,
       },
       error: null,
     };

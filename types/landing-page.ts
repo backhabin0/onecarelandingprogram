@@ -15,6 +15,8 @@ export interface LandingPage {
   main_image_url: string | null;
   template: string;
   status: LandingPageStatus;
+  /** 대기열에서 공개된 시각(013 migration). 관리자가 직접 만든 페이지와 기존 페이지는 null */
+  published_at: string | null;
   created_at: string;
   updated_at: string;
 }

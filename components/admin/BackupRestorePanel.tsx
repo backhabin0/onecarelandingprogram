@@ -31,6 +31,12 @@ interface DryRunPlan {
     orphanCount: number;
   };
   events: { toInsertCount: number; skipExistingCount: number; orphanCount: number };
+  publishQueue: {
+    toInsertCount: number;
+    toUpdateCount: number;
+    conflictCount: number;
+    unlinkedCount: number;
+  };
   siteVerification: { willUpdate: boolean };
 }
 
@@ -43,6 +49,7 @@ interface BackupMeta {
     faqs: number;
     consultations: number;
     events: number;
+    publishQueue: number;
   };
 }
 
@@ -63,6 +70,7 @@ interface RestoreResult {
   faqs: { inserted: number; updated: number; orphan: number };
   consultations: { inserted: number; skipped: number; submissionConflicts: number; orphan: number };
   events: { inserted: number; skipped: number; orphan: number };
+  publishQueue: { inserted: number; updated: number; conflicts: number; unlinked: number };
   siteVerification: { updated: boolean };
 }
 
@@ -84,6 +92,7 @@ const INVALID_COUNT_LABEL: Record<string, string> = {
   faqs: "FAQ",
   consultations: "상담",
   events: "통계 이벤트",
+  publishQueue: "공개 대기열",
 };
 
 const PHASE_LABEL: Record<string, string> = {
@@ -92,6 +101,7 @@ const PHASE_LABEL: Record<string, string> = {
   faqs: "FAQ",
   consultations: "상담",
   events: "통계 이벤트",
+  publish_queue: "공개 대기열",
   site_verification: "검색엔진 인증 설정",
 };
 
@@ -215,8 +225,8 @@ export default function BackupRestorePanel() {
           공유나 공개 저장소 업로드에 주의하세요.
         </p>
         <p className="mt-3 text-sm text-slate-500">
-          랜딩페이지, SEO 설정, FAQ, 상담 신청, 통계 이벤트, 검색엔진 인증
-          설정을 JSON 파일 하나로 내려받습니다. 이미지 파일 자체(Storage
+          랜딩페이지, SEO 설정, FAQ, 상담 신청, 통계 이벤트, 공개 대기열,
+          검색엔진 인증 설정을 JSON 파일 하나로 내려받습니다. 이미지 파일 자체(Storage
           binary)는 포함되지 않고, 참조 중인 이미지 URL 목록만 함께
           기록됩니다.
         </p>
@@ -335,6 +345,15 @@ export default function BackupRestorePanel() {
                 <dd className="text-slate-600">
                   추가 {plan.events.toInsertCount} · 이미 존재(유지){" "}
                   {plan.events.skipExistingCount} · 부모 없음 {plan.events.orphanCount}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-medium text-slate-700">공개 대기열</dt>
+                <dd className="text-slate-600">
+                  추가 {plan.publishQueue.toInsertCount} · 업데이트{" "}
+                  {plan.publishQueue.toUpdateCount} · 충돌(건너뜀){" "}
+                  {plan.publishQueue.conflictCount} · 페이지 연결 해제{" "}
+                  {plan.publishQueue.unlinkedCount}
                 </dd>
               </div>
               <div>
@@ -464,6 +483,15 @@ export default function BackupRestorePanel() {
                   <dd>
                     추가 {restoreResult.events.inserted} · 건너뜀{" "}
                     {restoreResult.events.skipped} · 부모 없음 {restoreResult.events.orphan}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-medium">공개 대기열</dt>
+                  <dd>
+                    추가 {restoreResult.publishQueue.inserted} · 업데이트{" "}
+                    {restoreResult.publishQueue.updated} · 충돌(건너뜀){" "}
+                    {restoreResult.publishQueue.conflicts} · 페이지 연결 해제{" "}
+                    {restoreResult.publishQueue.unlinked}
                   </dd>
                 </div>
                 <div>

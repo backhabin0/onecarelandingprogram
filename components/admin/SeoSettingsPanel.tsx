@@ -11,6 +11,7 @@ import {
   validateImageFile,
 } from "@/lib/storage/landing-page-assets";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { SEO_MAX_LENGTH } from "@/lib/landing-page-validation";
 import Card from "@/components/admin/Card";
 import FormField from "@/components/admin/FormField";
 import {
@@ -244,7 +245,7 @@ export default function SeoSettingsPanel({
                   className={inputClassName}
                   placeholder={autoTitle}
                   value={values.seoTitle}
-                  maxLength={120}
+                  maxLength={SEO_MAX_LENGTH.title}
                   onChange={(e) => updateField("seoTitle", e.target.value)}
                 />
                 <SourceBadge source={getSeoFieldSource(values.seoTitle)} />
@@ -262,7 +263,7 @@ export default function SeoSettingsPanel({
                   className={inputClassName}
                   placeholder={autoDescription}
                   value={values.seoDescription}
-                  maxLength={320}
+                  maxLength={SEO_MAX_LENGTH.description}
                   onChange={(e) => updateField("seoDescription", e.target.value)}
                 />
                 <SourceBadge source={getSeoFieldSource(values.seoDescription)} />
@@ -295,7 +296,7 @@ export default function SeoSettingsPanel({
                   className={inputClassName}
                   placeholder={resolved.ogTitle}
                   value={values.ogTitle}
-                  maxLength={120}
+                  maxLength={SEO_MAX_LENGTH.title}
                   onChange={(e) => updateField("ogTitle", e.target.value)}
                 />
                 <SourceBadge source={getSeoFieldSource(values.ogTitle)} />
@@ -313,7 +314,7 @@ export default function SeoSettingsPanel({
                   className={inputClassName}
                   placeholder={resolved.ogDescription}
                   value={values.ogDescription}
-                  maxLength={320}
+                  maxLength={SEO_MAX_LENGTH.description}
                   onChange={(e) => updateField("ogDescription", e.target.value)}
                 />
                 <SourceBadge source={getSeoFieldSource(values.ogDescription)} />
@@ -375,7 +376,7 @@ export default function SeoSettingsPanel({
                 id="businessCategory"
                 className={inputClassName}
                 value={values.businessCategory}
-                maxLength={100}
+                maxLength={SEO_MAX_LENGTH.businessCategory}
                 onChange={(e) => updateField("businessCategory", e.target.value)}
               />
             </FormField>
@@ -388,7 +389,7 @@ export default function SeoSettingsPanel({
                 id="serviceArea"
                 className={inputClassName}
                 value={values.serviceArea}
-                maxLength={200}
+                maxLength={SEO_MAX_LENGTH.serviceArea}
                 onChange={(e) => updateField("serviceArea", e.target.value)}
               />
             </FormField>

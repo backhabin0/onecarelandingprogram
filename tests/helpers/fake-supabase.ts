@@ -13,6 +13,9 @@
  * - count를 요청하면서 전체 건수를 넘는 offset으로 range를 요청하면 PostgREST처럼
  *   PGRST103(416 Requested range not satisfiable) 오류를 돌려준다.
  * - `alias:table(cols)` 형태의 관계 조인(embedded select)을 relations 설정대로 붙인다.
+ * - 쓰기: insert / upsert(onConflict 컬럼 기준, 보낸 컬럼만 덮어씀 — PostgREST
+ *   merge-duplicates와 같음) / update(...).eq(...). unique 제약은 흉내 내지 않는다.
+ * - maybeSingle(): 0행이면 data null, 1행이면 그 행.
  */
 
 type Row = Record<string, unknown>;
@@ -164,7 +167,14 @@ export type FakeResponse =
   | { data: Row[] | null; error: null; count: number | null }
   | { data: null; error: PostgrestLikeError; count: null };
 
+type WriteOp =
+  | { kind: "insert"; rows: Row[] }
+  | { kind: "upsert"; rows: Row[]; onConflict: string }
+  | { kind: "update"; values: Row };
+
 class FakeQueryBuilder implements PromiseLike<FakeResponse> {
+  private write: WriteOp | null = null;
+  private single = false;
   private selectItems: SelectItem[] = [{ kind: "all" }];
   private countRequested = false;
   private head = false;
@@ -244,7 +254,63 @@ class FakeQueryBuilder implements PromiseLike<FakeResponse> {
     return this;
   }
 
+  maybeSingle() {
+    this.single = true;
+    return this;
+  }
+
+  insert(rows: Row | Row[]) {
+    this.write = { kind: "insert", rows: Array.isArray(rows) ? rows : [rows] };
+    return this;
+  }
+
+  upsert(rows: Row | Row[], options: { onConflict: string }) {
+    this.write = {
+      kind: "upsert",
+      rows: Array.isArray(rows) ? rows : [rows],
+      onConflict: options.onConflict,
+    };
+    return this;
+  }
+
+  update(values: Row) {
+    this.write = { kind: "update", values };
+    return this;
+  }
+
+  private executeWrite(write: WriteOp): FakeResponse {
+    const table = (this.db.tables[this.table] ??= []);
+    // 저장된 행이 호출부 객체와 같은 참조를 갖지 않도록 복사한다.
+    const copy = (row: Row) => JSON.parse(JSON.stringify(row)) as Row;
+
+    if (write.kind === "insert") {
+      table.push(...write.rows.map(copy));
+    } else if (write.kind === "upsert") {
+      for (const row of write.rows) {
+        const key = row[write.onConflict];
+        const existing = table.find((r) => r[write.onConflict] === key);
+        if (existing) Object.assign(existing, copy(row));
+        else table.push(copy(row));
+      }
+    } else {
+      for (const row of table) {
+        if (this.predicates.every((p) => p(row))) Object.assign(row, copy(write.values));
+      }
+    }
+    this.db.requests.push({
+      table: this.table,
+      from: null,
+      to: null,
+      head: false,
+      count: false,
+      returned: 0,
+    });
+    return { data: null, error: null, count: null };
+  }
+
   private execute(): FakeResponse {
+    if (this.write) return this.executeWrite(this.write);
+
     const source = this.db.tables[this.table] ?? [];
     let rows = source.filter((row) => this.predicates.every((p) => p(row)));
 
@@ -305,6 +371,9 @@ class FakeQueryBuilder implements PromiseLike<FakeResponse> {
       .map((row) => this.db.project(this.table, row, this.selectItems));
     log.returned = page.length;
 
+    if (this.single) {
+      return { data: (page[0] ?? null) as never, error: null, count: null };
+    }
     return { data: page, error: null, count: this.countRequested ? total : null };
   }
 
