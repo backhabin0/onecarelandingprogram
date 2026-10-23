@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-23 (8-4 운영 배포 완료 — main `3664625`, pg_cron 미등록)
+마지막 업데이트: 2026-10-23 (8-5 pg_cron 켜기·매일 작업 등록 완료, 자동 공개는 꺼짐 유지)
 
 ## 배경
 
@@ -597,6 +597,28 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - pg_cron 켜기·매일 자동 공개 등록은 하지 않음(다음 단계)
 - 되돌리기가 필요하면: Vercel에서 `dpl_A76SdL2cfJ4AnQthqyLgKUdxHrcv`로 promote(또는 `vercel rollback`). DB(013~016)는 추가만 했으므로 이전 코드와 함께 동작
 
+## 8단계 — 8-5 pg_cron + 매일 자동 공개 작업 등록 ✅ (2026-10-23)
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | pg_cron 켜기 | 공식 문서(supabase.com/docs/guides/cron/install) SQL을 한 트랜잭션으로 실행: `create extension if not exists pg_cron with schema pg_catalog;` + `grant usage on schema cron to postgres;` + `grant all privileges on all tables in schema cron to postgres;` → pg_cron **1.6.4**(pg_catalog), cron 스키마 생김, 작업 0개 |
+| 2-1 | `015_cron_schedule.sql` 그대로 실행 | ❌ 오류 → 트랜잭션이라 **전부 취소**(바뀐 것 없음 확인). 원인: 이미 켜진 상태에서 `create extension if not exists pg_cron`을 다시 부르면 Supabase의 pg_cron 권한 이벤트 트리거가 다시 돌아 `revoke all on table cron.job from postgres`에서 `2BP01 dependent privileges exist` |
+| 2-2 | create extension 줄만 빼고 [A] 실행(사용자 승인) | ✅ `cron.job` **1개**: jobid 1, `onecare-daily-auto-publish`, `0 0 * * *`(매일 09:00 KST), `select public.run_auto_publish(false)`, 실행 사용자 `postgres`, active |
+
+- 자동 공개 설정은 **꺼짐 그대로**(하루 50개). 매일 09:00 KST에 작업이 돌지만 `run_auto_publish`가 꺼짐을 보고 `{"status":"disabled"}`만 돌려주고 아무것도 공개·기록하지 않음(실행 이력은 `cron.job_run_details`에 하루 1줄)
+- CLI(`db query --linked`)의 접속 사용자는 `postgres`(superuser 아님)라 작업도 `postgres`로 등록됨
+- `supabase/manual/015_cron_schedule.sql`: create extension 줄을 `with schema pg_catalog`로 바꾸고 "이미 켜져 있으면 이 줄은 빼고 실행" 안내 주석 추가(테스트도 맞춤)
+- 시험 공개는 하지 않음 — 손님 실제 지역·키워드로 첫 묶음을 만들 때 시험(사용자 결정)
+- 되돌리기: 작업 해제는 파일의 [C], pg_cron 끄기는 `drop extension pg_cron;`(작업도 함께 삭제)
+
+### 기존 1,047개 IndexNow 전송 — 제안만(실행 안 함, 사용자 결정 대기)
+
+- 한도: 요청 1번에 **최대 10,000개**(indexnow.org) → 1,047개는 한 번에 가능. 하루 한도는 공개되지 않음(검색엔진별·사이트별 기준), 많이 보내면 429
+- 현재 코드로는 안 보내짐: 전송 대상은 `published_at`이 있는(대기열로 공개된) 페이지뿐인데 기존 1,047개는 모두 비어 있음. 전송 기록 0
+- 기존 페이지 생성 시기: 2026-09 674개, 2026-10 373개(수정 시각도 같음) — 1~2개월 된 페이지
+- 주의(indexnow.org FAQ): "예전 변경을 소급해서 보내는 용도가 아님"(오래된 내용은 lastmod 있는 sitemap 권장), 바뀌지 않은 주소 재전송 금지, 보낸 주소는 크롤링 할당량을 씀, 색인 보장 없음
+- 엔드포인트는 네이버 서치어드바이저(`lib/indexnow.ts`), 네이버에 사이트 등록·소유 확인이 필요
+
 ## 8-2 이후 운영 적용 체크리스트
 
 표시: 🙋 = 사용자가 직접 해야 함(대시보드 조작·결정·비밀값) / 🤖 = Claude가 할 수 있음(지시 후) / 🤝 = 함께
@@ -612,7 +634,7 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - [x] 🙋 관리자 JSON 백업 다운로드 — `다운로드\onecare-backup-20261023T095140Z.json`(8-3, 1,000행 잘림 없이 전부 들어 있음)
 - [x] 🤖 DB 덤프(SELECT만) — `C:\Users\user\Documents\onecare-backup\2026-10-23_1853\`(8-3)
 - [x] 🤝 migration **013 → 014 → 015 → 016** 하나씩 적용 + 각 단계 확인(8-3, 아래 결과 표)
-- [ ] 🙋 Dashboard > Database > Extensions에서 **pg_cron 켜기** → `supabase/manual/015_cron_schedule.sql` [A] 실행 → `select * from cron.job`으로 `onecare-daily-auto-publish`(`0 0 * * *`) 확인 — 코드 배포 뒤 자동 공개를 켜기 전까지만 하면 됨(지금 켜도 설정이 꺼짐이라 아무것도 공개하지 않음)
+- [x] 🤖 **pg_cron 켜기**(1.6.4) → [A] 등록 → `cron.job`에 `onecare-daily-auto-publish`(`0 0 * * *`) 1개 확인(8-5)
 - [x] 🤖 **CRON_SECRET**(48자) 만들기 → Vault `indexnow_cron_secret` 등록(8-4, 값은 출력·저장 안 함)
 
 ### C. Vercel 환경변수·배포
@@ -639,6 +661,6 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 
 ## 다음 단계
 
-1. 체크리스트 D 남은 것: 관리자 화면 확인(🤝), 네이버 서치어드바이저·IndexNow 첫 전송(🙋)
-2. pg_cron 켜기·매일 자동 공개 등록(B, 사용자 지시 후) → E 자동 공개 시작 → F 사용 설명서
+1. 기존 1,047개 IndexNow 전송 여부 결정(🙋, 위 제안) / 네이버 서치어드바이저 사이트 등록·sitemap 제출 확인(🙋)
+2. 손님 실제 지역·키워드로 첫 묶음 → 대기열 → '지금 1회 실행'으로 시험 공개(E) → 자동 공개 켜기 결정 → F 사용 설명서
 3. (선택) 남은 npm audit 중 메이저 변경 없는 것(`npm audit fix`) 정리

@@ -2,8 +2,9 @@
 -- 먼저 supabase/migrations/015_auto_publish_indexnow.sql 이 적용되어 있어야 한다.
 --
 -- 적용 방법(운영 적용 단계에서, 사용자 지시 후):
---   1. Supabase Dashboard > Database > Extensions 에서 pg_cron 을 켠다
---      (또는 아래 create extension 줄이 권한 문제 없이 실행되는지 확인).
+--   1. pg_cron 을 켠다: Supabase Dashboard > Integrations > Cron, 또는 공식 문서 SQL
+--      (create extension pg_cron with schema pg_catalog; + grant 2줄 — supabase.com/docs/guides/cron/install).
+--      운영은 8-5(2026-10-23)에 SQL로 켬.
 --   2. 이 파일의 [A] 부분을 SQL Editor 에서 실행한다.
 --   3. Database > Cron(또는 select * from cron.job) 에서 'onecare-daily-auto-publish' 가
 --      '0 0 * * *'(매일 00:00 UTC = 09:00 KST)로 등록됐는지 확인한다.
@@ -15,7 +16,10 @@
 -- ============================================================
 -- [A] 매일 자동 공개 등록
 -- ============================================================
-create extension if not exists pg_cron;
+-- pg_cron 이 이미 켜져 있으면 아래 create extension 줄은 빼고 실행한다.
+-- 이미 켜진 상태에서도 Supabase 의 pg_cron 권한 설정(이벤트 트리거)이 다시 돌아,
+-- 공식 문서의 grant 를 준 뒤라면 'dependent privileges exist' 오류로 전체가 취소된다(8-5에서 확인).
+create extension if not exists pg_cron with schema pg_catalog;
 
 -- 같은 이름이 이미 있으면 지우고 다시 등록한다(여러 번 실행해도 안전).
 select cron.unschedule(jobid)
