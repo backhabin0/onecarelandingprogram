@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-23 (7단계 완료, 운영 DB 미적용)
+마지막 업데이트: 2026-10-23 (8-1 운영 현황 확인 완료, 운영 DB 미적용)
 
 ## 배경
 
@@ -449,8 +449,77 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 관리자 '새 페이지 만들기'·'수정' 폼에는 새 칸(시/군·지역·키워드·alt·현장 사례)이 없다 — 대기열에서 공개된 페이지만 값이 있음. 직접 만든 페이지에도 필요하면 다음에 추가
 - "근처 지역"은 실제 거리가 아니라 같은 시/군 안의 다른 지역이다(위치 좌표가 없음)
 
+## 8단계 — 8-1 운영 현황 확인 ✅ (2026-10-23, 운영 DB 읽기 전용 조회)
+
+### 운영 DB(`jxatzdldyawjxgeepdiz`) count 조회
+
+`npx supabase db query --linked --project-ref jxatzdldyawjxgeepdiz "<SELECT count…>"`(`supabase link` 없이, SELECT 한 문장만 실행)
+
+| 항목 | 값 |
+| --- | --- |
+| landing_pages 전체 | **1,047** |
+| status = 'public' | **1,047** |
+| seo_noindex = true(SEO 설정 전체) | 0 |
+| 공개 중 + noindex | 0 |
+| → sitemap에 들어가야 할 페이지 | **1,047** |
+
+- **주의 — CLI가 로그인 역할을 만들었을 수 있음:** 위 명령 실행 중 CLI가 "Initialising login role..."을 출력했다. Supabase CLI가 Management API로 DB에 접속하기 위해 **임시 로그인 역할(DB 계정)을 만들거나 갱신**한 것으로 보인다. 테이블 데이터·스키마는 바꾸지 않았고 실행한 SQL은 SELECT 한 문장뿐이지만, "운영 DB 쓰기 금지"에 비춰 보고해 둔다. 이후 추가 조회는 하지 않았다. 확인하려면 Supabase Dashboard > Database > Roles에서 `cli_login_` 로 시작하는 역할이 있는지 본다(지우거나 바꾸는 것은 사용자 판단).
+
+### 운영 sitemap(https://onecarepage.co.kr/sitemap.xml, GET)
+
+- HTTP 200, `<url>` **1,000개**(중복 없음). lastmod 범위 2026-09-12 ~ 2026-10-22
+
+### 결론: 운영에서 1,000개 잘림이 실제로 일어나고 있다
+
+- sitemap에 있어야 할 페이지 1,047개 중 **1,000개만** 들어 있다 → **47개 누락**
+- 운영 코드(main)는 sitemap 조회에 1,000행 제한 대응이 없고 created_at 최신순이라, **가장 오래된 47개 페이지**가 빠져 있다(sitemap의 가장 이른 lastmod가 2026-09-12)
+- 이 브랜치의 1단계 수정(1,000행씩 끝까지 읽기)이 배포되면 해결된다. 단, 이 브랜치의 sitemap 조회는 016 칸(published_at·region·city 등)도 함께 고르므로 **migration 013~016 적용 후 배포**해야 한다(먼저 배포하면 sitemap이 빈 목록이 됨)
+- 같은 원인으로 운영의 관리자 화면 숫자·통계·상담 CSV·백업도 1,000행 근처에서 잘리고 있을 가능성이 높다(1단계 변경 내용 참고)
+
+### 예시 파일(`docs/samples/`, `npm run samples`로 다시 생성)
+
+- `onecare-bulk-upload-template.xlsx`: 엑셀 양식(머리글 25칸 + 예시 1행)
+- `prompt-3regions-x-2keywords.txt`: 프롬프트 만들기 결과(산본동·금정동·수리동 × 배관 수리·하수구 막힘 = 6행)
+- `README.md`: 예시 입력값과 사용 순서
+
+## 8-2 이후 운영 적용 체크리스트
+
+표시: 🙋 = 사용자가 직접 해야 함(대시보드 조작·결정·비밀값) / 🤖 = Claude가 할 수 있음(지시 후) / 🤝 = 함께
+
+### A. 운영 적용 전 확인
+- [ ] 🙋 **테스트 환경 결정**: ① Supabase Pro로 테스트 프로젝트 추가 ② 이 PC에 Docker Desktop 설치 후 로컬 Supabase ③ 다른 계정의 무료 프로젝트 — 중 하나(무료 활성 프로젝트 2개는 모두 운영이라 지금은 만들 수 없음)
+- [ ] 🤖 테스트 DB에 migration 001~016 적용 → 1,000행 넘는 데이터로 sitemap·관리자 목록·통계·CSV·백업/복구, 대량 업로드·붙여넣기, 공개 함수(rpc), IndexNow(가짜 키), 지역 모음·내부 링크를 실제 브라우저로 확인
+- [ ] 🤖 Next.js 보안 업데이트(npm audit의 next critical): 패치 버전으로 올리고 테스트·빌드 재확인
+- [ ] 🙋 **hanapage.co.kr**(Supabase `mozfqmsjjarpsjhfjrql`)도 이 코드를 배포하는지 결정 — 배포한다면 아래 B~E를 그 프로젝트에도 반복
+
+### B. 운영 DB 적용(사용자 지시 후에만)
+- [ ] 🙋 운영 관리자 화면 > 설정 > 백업 및 복구에서 **백업 파일 다운로드**(현재 운영 코드의 백업도 1,000행에서 잘릴 수 있으므로, 필요하면 Supabase Dashboard > Database > Backups의 자동 백업 시각도 확인)
+- [ ] 🙋 migration 적용 승인 → 🤝 Supabase SQL Editor에서 **013 → 014 → 015 → 016 순서**로 실행(각 파일 실행 후 오류 없는지 확인). 실패하면 해당 번호부터 `supabase/rollback/0NN_down.sql`을 역순으로 실행
+- [ ] 🙋 Dashboard > Database > Extensions에서 **pg_cron 켜기** → `supabase/manual/015_cron_schedule.sql` [A] 실행 → `select * from cron.job`으로 `onecare-daily-auto-publish`(`0 0 * * *`) 확인
+- [ ] 🙋 16자 이상 무작위 **CRON_SECRET** 만들기 → 같은 값을 Vault에 등록(`015_cron_schedule.sql` [B]) — 값은 git·채팅에 남기지 않기
+
+### C. Vercel 환경변수·배포
+- [ ] 🙋 Vercel(onecarepage.co.kr 프로젝트) 환경변수 추가: `INDEXNOW_KEY=d8480180f2798f02382139f1dfd53952`, `CRON_SECRET=<B에서 만든 값>`, `NEXT_PUBLIC_SITE_URL`이 `https://onecarepage.co.kr`인지 확인
+- [ ] 🤖 `feature/bulk-publish` → `main` PR 준비(변경 요약·적용 순서 포함) → 🙋 **머지·Production 배포 승인**(반드시 B 완료 후)
+- [ ] 🙋 Vercel > Settings > Cron Jobs에 `/api/indexnow`(`10 0 * * *`)가 보이는지 확인
+
+### D. 배포 직후 확인
+- [ ] 🤖 sitemap.xml URL 수 = 공개+noindex 아닌 페이지 수(현재 1,047) + 지역 모음 페이지 수인지(읽기 전용 GET)
+- [ ] 🤝 관리자 화면: 대시보드 숫자(1,047), 랜딩 목록 페이지 나눔, AI 대량 생성(양식 다운로드·붙여넣기 검사), 공개 대기열, 설정(유사도 기준·자동 공개·IndexNow 상태)
+- [ ] 🤝 공개 페이지 1개를 골라 H1·경로·구조화 데이터 확인(Google 리치 결과 테스트, 네이버 서치어드바이저 웹 페이지 최적화 검사) — 기존 페이지는 지역·키워드 칸이 없으므로 예전과 같게 보이는 것이 정상
+- [ ] 🙋 `https://onecarepage.co.kr/d8480180f2798f02382139f1dfd53952.txt`가 키 값을 그대로 보여주는지 확인
+- [ ] 🙋 네이버 서치어드바이저에 사이트가 등록·소유 확인되어 있는지, IndexNow 사용 조건 확인 → 설정 화면 '지금 보내기'로 첫 전송, 결과 기록 확인
+
+### E. 자동 공개 시작
+- [ ] 🙋 대기열에 테스트용 몇 개를 ready로 넣고 설정 > '지금 1회 실행'으로 공개 → 공개 페이지·IndexNow 기록·'공개된 주소' 확인
+- [ ] 🙋 **자동 공개 켜기**와 하루 개수 결정(기본 꺼짐, 50개) / 얇은 페이지 noindex 옵션 여부 결정(기본 꺼짐)
+- [ ] 🙋 다음 날 09:00(KST) 이후 설정 화면 실행 기록·IndexNow 기록 확인
+
+### F. 마무리
+- [ ] 🤖 관리자용 사용 설명서(양식 작성법, 프롬프트 사용법, 검사 결과 읽는 법, 대기열·자동 공개·공개된 주소 사용법)
+- [ ] 🤝 운영 확인이 끝난 뒤 이 체크리스트와 계획 문서를 완료로 갱신
+
 ## 다음 단계
 
-1. 8단계: 운영 적용 전 테스트 DB(또는 로컬 Supabase)·실제 브라우저로 전체 재확인(rpc, 업로드·붙여넣기, 백업/복구, 1,000행 넘는 데이터, 지역 모음·내부 링크, 구조화 데이터 도구 검사)
-2. Next.js 보안 업데이트
-3. 운영 DB에 013 → 014 → 015 → 016 적용 + cron 등록(사용자 지시 후) → 코드 배포 → 사용 설명서
+1. 8-2: 위 체크리스트 A(테스트 환경 결정 → 테스트 DB 전체 재확인, Next.js 보안 업데이트)
+2. 그 다음 B~F는 사용자 지시에 따라 한 단계씩
