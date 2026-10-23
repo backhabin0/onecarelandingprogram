@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-23 (8-1 운영 현황 확인 완료, 운영 DB 미적용)
+마지막 업데이트: 2026-10-23 (8-2 Next.js 보안 업데이트 완료, 운영 DB 미적용)
 
 ## 배경
 
@@ -482,15 +482,55 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - `prompt-3regions-x-2keywords.txt`: 프롬프트 만들기 결과(산본동·금정동·수리동 × 배관 수리·하수구 막힘 = 6행)
 - `README.md`: 예시 입력값과 사용 순서
 
+## 8단계 — 8-2 Next.js 보안 업데이트 ✅ (2026-10-23, 운영 DB 접속 없음)
+
+### next critical 경고 원인(GitHub 보안 공지 기준)
+
+운영·브랜치 모두 **next 16.3.4**였고, 아래 공지에 해당했다. 3개는 16.4.1에서 처음 고쳐졌다(16.4.1은 이 3건만 고친 보안 전용 릴리스).
+
+| 공지 | 위험도 | 내용 | 영향 범위 | 고쳐진 버전 |
+| --- | --- | --- | --- | --- |
+| GHSA-2464-fhr4-w9xw | critical | 이미지 최적화(SVG) 경로의 원격 코드 실행 — 의존 라이브러리 sharp(librsvg) 결함, glibc Linux | ~16.4.0 | **16.4.1**(sharp ≥ 0.35.5) |
+| GHSA-673q-mjm6-r5xr | critical | `use cache`가 typed array를 돌려줄 때 원격 코드 실행(Cache Components 사용 앱) | 16.0.0~16.4.0 | **16.4.1** |
+| GHSA-p3m5-59mp-jv5r | high | Server Action이 있는 App Router 앱 CPU 고갈 서비스 거부 | ~16.4.0 | **16.4.1** |
+| GHSA-vcvr-r3jv-pc5j | critical | next/og ImageResponse 원격 코드 실행 | 16.2.0~16.3.5 | 16.3.6 |
+| GHSA-cjq9-62q9-8jv4 외 7건 | high~low | 이미지 최적화 SSRF, 캐시 오염·누출, 메타데이터 이미지 정보 노출 등 | ~16.3.7 | 16.3.8 |
+
+- 이 앱에 실제로 해당하는 것(코드 검색으로 확인):
+  - **GHSA-p3m5(Server Action DoS)**: 운영 main·이 브랜치 모두 Server Action을 쓰므로 **직접 해당**(운영도 지금 위험 — 배포로 해결)
+  - **GHSA-2464(이미지 최적화)**: 이 브랜치는 7단계부터 next/image와 Supabase Storage remotePatterns를 쓰므로 해당. 운영 main은 next/image를 쓰지 않고 원격 이미지 허용 설정도 없어 노출이 작지만, `/_next/image` 경로 자체는 있으므로 업데이트가 안전
+  - GHSA-673q(`use cache`)·GHSA-vcvr(next/og): 이 앱은 `use cache`·Cache Components·next/og를 쓰지 않아 **해당 없음**(그래도 같은 버전에서 함께 해소)
+
+### 업데이트
+
+- `next` 16.3.4 → **16.4.1**, `eslint-config-next` 16.3.4 → **16.4.1**(짝 패키지, 정확한 버전 고정). sharp는 next를 따라 **0.35.5**로 올라감. 같은 메이저(16) 안의 최소 안전 버전이라 메이저 업그레이드 필요 없음
+  - 16.4.1은 배포된 지 9일(2026-10-14)이라 평소 쓰는 "2주 지난 버전" 기준보다 새것이지만, 보안 패치가 들어간 가장 낮은 버전이 16.4.1이라 이것을 골랐다(16.4.2는 보안 수정 없는 Turbopack·문서 백포트)
+- 16.3 → 16.4 변경 중 확인한 것(16.4.0 릴리스 노트): strict route matching 기본 켜짐·라우트와 맞지 않는 페이지 오류·인식 못 한 Server Action은 클라이언트 오류(4xx)로 응답·AVIF 최적화 재활성화·`unstable_` 접두사 제거(navigation/prefetch — 이 앱은 사용 안 함)
+- **결과: 바뀐 동작 없음** — `npm test` 453개 ✅, `npx tsc --noEmit` ✅, `npx eslint` ✅, `npx next build` ✅. 빌드 라우트 목록(29개)이 업데이트 전과 같고, 빌드 로그도 기존 "Dynamic server usage" 안내만 있음
+
+### 남은 npm audit 경고(10건 → 운영 번들 포함은 1건)
+
+| 패키지 | 위험도 | 들어오는 경로 | 운영 영향 | 판단 |
+| --- | --- | --- | --- | --- |
+| source-map-js 1.2.1 | high(DoS) | postcss·tailwind(빌드 때 CSS 처리) | **낮음** — 빌드 때 우리 CSS의 source map만 읽음(외부 입력 없음). 런타임 요청 처리에 쓰이지 않음 | lockfile만 바뀌는 `npm audit fix`로 1.2.2 가능 — **다음에 고치기 권장**(쉬움, 위험 낮음) |
+| tinypool 1.1.1 | critical(프로토타입 오염 → RCE) | vitest 3.2.4(테스트 도구) | **없음** — 개발 PC의 테스트 실행에만 사용, 운영 배포에 포함 안 됨. 공격하려면 테스트 프로세스 옵션을 조작해야 함 | 고치려면 vitest 4(메이저) 필요 → **지금은 안 고침**, 나중에 vitest 4 업그레이드 때 |
+| vitest 3.2.4 / @vitest/mocker | critical·moderate | 테스트 도구 | 없음 — critical(GHSA-5xrq)은 vitest **UI 서버**를 켰을 때만 해당(이 프로젝트는 UI 안 씀). mocker 2건은 4.1.11+에서만 수정 | `npm audit fix`로 3.2.7까지는 가능(UI 서버 건 해결), 나머지는 vitest 4 필요 |
+| brace-expansion 1.1.18 / 5.0.9 | high(DoS) | eslint·typescript-eslint의 minimatch | 없음 — 개발 PC에서 우리 파일에만 lint | `npm audit fix`로 1.1.21 / 5.0.12 가능(lockfile만) |
+| braces·micromatch·fast-glob·@next/eslint-plugin-next·eslint-config-next | high(DoS) | eslint-config-next 16.4.1 | 없음 — lint 전용 | npm이 제안하는 수정이 eslint-config-next **14로 내리기**(메이저 다운그레이드)라 **하지 않음**. braces는 아직 고쳐진 버전이 없음(≤3.0.3 전부 해당) |
+
+- 정리: **운영 서버에 영향 있는 critical/high는 next 업데이트로 모두 해소**. 남은 것은 빌드 도구(source-map-js) 1건과 개발 도구(vitest·eslint)뿐
+- 권장(별도 지시 시): `npm audit fix`(메이저 변경 없음 — source-map-js 1.2.2, brace-expansion, vitest 3.2.7)를 한 번 적용하고 테스트 재확인. vitest 4 업그레이드는 운영 적용이 끝난 뒤
+
 ## 8-2 이후 운영 적용 체크리스트
 
 표시: 🙋 = 사용자가 직접 해야 함(대시보드 조작·결정·비밀값) / 🤖 = Claude가 할 수 있음(지시 후) / 🤝 = 함께
 
 ### A. 운영 적용 전 확인
-- [ ] 🙋 **테스트 환경 결정**: ① Supabase Pro로 테스트 프로젝트 추가 ② 이 PC에 Docker Desktop 설치 후 로컬 Supabase ③ 다른 계정의 무료 프로젝트 — 중 하나(무료 활성 프로젝트 2개는 모두 운영이라 지금은 만들 수 없음)
-- [ ] 🤖 테스트 DB에 migration 001~016 적용 → 1,000행 넘는 데이터로 sitemap·관리자 목록·통계·CSV·백업/복구, 대량 업로드·붙여넣기, 공개 함수(rpc), IndexNow(가짜 키), 지역 모음·내부 링크를 실제 브라우저로 확인
-- [ ] 🤖 Next.js 보안 업데이트(npm audit의 next critical): 패치 버전으로 올리고 테스트·빌드 재확인
-- [ ] 🙋 **hanapage.co.kr**(Supabase `mozfqmsjjarpsjhfjrql`)도 이 코드를 배포하는지 결정 — 배포한다면 아래 B~E를 그 프로젝트에도 반복
+- [x] 🙋 **테스트 환경: 따로 만들지 않음**(2026-10-23 결정). 운영 DB를 백업한 뒤 migration을 **하나씩** 적용하고 각 단계마다 확인한다(8-3에서 사용자가 지시). 실제 PostgREST·브라우저 확인은 운영 적용 후 D 단계에서 한다
+  - 참고: 013~016은 모두 칸·테이블·함수를 **추가**만 하므로(기존 칸 삭제·이름 변경 없음, 015는 하루 개수 제약만 좁힘) 지금 운영 중인 main 코드는 migration 적용 후에도 그대로 동작한다 → migration을 먼저 하나씩 적용하고, 코드 배포는 마지막에
+  - 위험 줄이기: migration 사이마다 운영 사이트·관리자 화면이 정상인지 확인, 문제 생기면 해당 `supabase/rollback/0NN_down.sql`로 되돌리기
+- [x] 🤖 Next.js 보안 업데이트 — 8-2에서 완료(next 16.3.4 → 16.4.1)
+- [x] 🙋 hanapage.co.kr(Supabase `mozfqmsjjarpsjhfjrql`)은 **이번 범위에서 제외**(2026-10-23 결정)
 
 ### B. 운영 DB 적용(사용자 지시 후에만)
 - [ ] 🙋 운영 관리자 화면 > 설정 > 백업 및 복구에서 **백업 파일 다운로드**(현재 운영 코드의 백업도 1,000행에서 잘릴 수 있으므로, 필요하면 Supabase Dashboard > Database > Backups의 자동 백업 시각도 확인)
@@ -521,5 +561,6 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 
 ## 다음 단계
 
-1. 8-2: 위 체크리스트 A(테스트 환경 결정 → 테스트 DB 전체 재확인, Next.js 보안 업데이트)
-2. 그 다음 B~F는 사용자 지시에 따라 한 단계씩
+1. 8-3(사용자 지시): 체크리스트 B — 운영 백업 → migration 013 → 014 → 015 → 016을 하나씩 적용하며 확인
+2. 그 다음 C~F는 사용자 지시에 따라 한 단계씩
+3. (선택) 남은 npm audit 중 메이저 변경 없는 것(`npm audit fix`) 정리
