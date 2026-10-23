@@ -6,6 +6,7 @@ import {
   sanitizeVerificationValue,
   updateSiteVerificationSettings,
 } from "@/lib/site-verification";
+import { updateSimilarityThresholds } from "@/lib/bulk-publish-settings";
 
 export interface UpdateSiteVerificationActionInput {
   google: string;
@@ -46,6 +47,38 @@ export async function updateSiteVerificationAction(
   if (result.success) {
     revalidatePath("/");
     revalidatePath("/admin/settings");
+  }
+
+  return result;
+}
+
+export interface UpdateSimilarityThresholdsActionResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * 4단계: 대량 등록 문장 유사도 기준값(경고/오류) 저장.
+ * 0 < 경고 < 오류 ≤ 1 은 lib/bulk-publish-settings.ts와 DB check 제약이 함께 강제한다.
+ */
+export async function updateSimilarityThresholdsAction(input: {
+  warning: unknown;
+  error: unknown;
+}): Promise<UpdateSimilarityThresholdsActionResult> {
+  await requireUser();
+
+  if (typeof input.warning !== "number" || typeof input.error !== "number") {
+    return { success: false, error: "잘못된 요청입니다." };
+  }
+
+  const result = await updateSimilarityThresholds({
+    warning: input.warning,
+    error: input.error,
+  });
+
+  if (result.success) {
+    revalidatePath("/admin/settings");
+    revalidatePath("/admin/bulk");
   }
 
   return result;

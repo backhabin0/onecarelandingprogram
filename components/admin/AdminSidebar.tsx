@@ -13,6 +13,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: "대시보드", href: "/admin" },
   { label: "랜딩페이지 관리", href: "/admin/pages" },
   { label: "새 페이지 만들기", href: "/admin/pages/new" },
+  { label: "대량 등록", href: "/admin/bulk" },
+  { label: "공개 대기열", href: "/admin/queue" },
   { label: "상담 관리", href: "/admin/consultations" },
   { label: "통계", href: "/admin/analytics" },
   { label: "템플릿 관리", href: "/admin/templates" },

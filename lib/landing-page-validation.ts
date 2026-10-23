@@ -89,7 +89,15 @@ export type ValidationIssueCode =
   | "duplicate_slug_in_batch"
   | "slug_in_use"
   | "slug_normalized"
-  | "non_kakao_url";
+  | "non_kakao_url"
+  // 아래는 대량 등록(lib/bulk-upload)에서만 쓰는 코드
+  | "invalid_faq"
+  | "unknown_template"
+  | "duplicate_pair_in_batch"
+  | "pair_in_queue"
+  | "similarity_too_high"
+  | "similarity_high"
+  | "phone_number_cell";
 
 export interface ValidationIssue {
   code: ValidationIssueCode;
@@ -329,7 +337,7 @@ export interface BulkLandingPageRowInput {
 }
 
 export interface BulkRowValidationResult {
-  /** 사용자에게 보여줄 행 번호(firstRowNumber부터 1씩 증가) */
+  /** 사용자에게 보여줄 행 번호(rowNumbers를 주면 그 값, 아니면 firstRowNumber부터 1씩 증가) */
   rowNumber: number;
   normalized: NormalizedLandingPageInput & { status: string };
   /** 하나라도 있으면 이 행은 등록할 수 없다 */
@@ -350,6 +358,11 @@ export interface BulkValidationOptions {
    * 첫 행의 번호. CSV처럼 1행이 머리글이면 2를 넘긴다. 기본값 1.
    */
   firstRowNumber?: number;
+  /**
+   * 행마다 보여줄 번호를 직접 지정한다(rows와 같은 길이). 빈 줄을 건너뛴
+   * 엑셀처럼 번호가 연속되지 않을 때 쓴다. 주면 firstRowNumber는 무시한다.
+   */
+  rowNumbers?: readonly number[];
   /** DB에 이미 있는 slug 목록. 주면 겹치는 행을 오류로 표시한다(소문자 기준 비교). */
   existingSlugs?: Iterable<string>;
 }
@@ -379,6 +392,10 @@ export function validateLandingPageRows(
   options: BulkValidationOptions = {}
 ): BulkValidationResult {
   const firstRowNumber = options.firstRowNumber ?? 1;
+  if (options.rowNumbers && options.rowNumbers.length !== rows.length) {
+    throw new Error("rowNumbers의 길이는 rows와 같아야 합니다.");
+  }
+  const rowNumberAt = (index: number) => options.rowNumbers?.[index] ?? firstRowNumber + index;
   const existing = new Set(
     Array.from(options.existingSlugs ?? [], (slug) => slug.trim().toLowerCase())
   );
@@ -427,7 +444,7 @@ export function validateLandingPageRows(
     }
 
     return {
-      rowNumber: firstRowNumber + index,
+      rowNumber: rowNumberAt(index),
       normalized: { ...normalized, status },
       errors,
       warnings,

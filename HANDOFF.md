@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-23 (3단계 완료, 운영 DB 미적용)
+마지막 업데이트: 2026-10-23 (4단계 완료, 운영 DB 미적용)
 
 ## 배경
 
@@ -214,8 +214,77 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 요청서의 "0단계 계획"은 저장소에 없어서 이번 요청서에 적힌 컬럼·규칙대로 만들었다. 계획과 다른 점이 있으면 알려줄 것.
 - 백업에는 대기열만 넣었고 `auto_publish_settings`·`publish_runs`는 넣지 않았다(요청 범위). 필요하면 추가.
 
+## 4단계 — 엑셀 대량 등록 + 검사 + 공개 대기열 화면 ✅ 완료 (운영 DB 미적용)
+
+전체 계획과 단계별 커밋은 `docs/BULK_PUBLISH_PLAN.md`에 있다.
+
+### 화면
+
+- 관리자 메뉴에 **대량 등록**(`/admin/bulk`)과 **공개 대기열**(`/admin/queue`) 추가(기존 사이드바·카드·표 스타일 그대로)
+- 대량 등록
+  1. **엑셀 양식 다운로드**(`/admin/bulk/template`, 로그인 필요): 열 = 지역, 키워드, region_slug, keyword_slug, 업체명, 페이지 제목, 대표 문구, 소개 문구, 전화, 카카오 URL, 주소, 템플릿, SEO 제목, SEO 설명, FAQ 질문1~3/답변1~3. 첫 줄 머리글(굵게, 고정) + 예시 1행, 모든 칸 텍스트 형식(전화번호 앞 0 보존)
+  2. **파일 올리기**: xlsx/csv를 **브라우저에서** 파싱 → 서버에서 비교 정보(이미 쓰는 slug, 대기열 지역·키워드, 같은 키워드 기존 문구)만 받아 → 브라우저에서 검사 → 결과 표(행 번호별 통과/경고/오류, 유사도, 문구, 필터)
+  3. **대기열에 넣기**: 통과·경고 행만 `state=ready`로 저장. 유사도 오류만 있는 행은 체크박스를 켜면 `state=hold`로 저장. 요청은 600KB·200행 단위로 나눠 순서대로 보내고(Server Action 기본 1MB 제한), **서버가 같은 규칙으로 다시 검사**한 뒤 저장. 결과로 ready/hold/건너뜀(이유) 표시
+- 공개 대기열: 상태 탭(전체/공개 대기/보류/초안/실패/공개됨 + 건수), 검색(지역·키워드·업체명·제목·URL), 50개씩 페이지, 공개 순서(오래된 순)로 정렬, 선택 항목 보류→공개 대기·삭제, 행별 수정/공개 대기로/삭제. 공개된 항목은 선택·수정·삭제 불가(페이지 보기 링크)
+- 대기열 항목 수정(`/admin/queue/[id]/edit`): 모든 칸 + 상태(공개 대기/보류/초안). 같은 규칙으로 재검사(자기 자신은 비교 제외). 유사도 오류면 ready로 저장 불가(hold/draft만)
+- 설정 화면에 **대량 등록 문장 유사도 기준** 카드(경고/오류 기준값)
+
+### 검사 규칙(`lib/bulk-upload/check.ts`, 브라우저·서버 공용)
+
+- 기본 규칙은 2단계 `validateLandingPageRows` 그대로(필수값, 글자 수, slug 형식, 예약어, 카카오 URL, SEO 글자 수, 파일 안 slug 중복, 이미 쓰는 slug). 상태는 항상 public으로 검사(공개 시 public이 되므로)
+- 대량 등록 전용: 지역·키워드·region_slug·keyword_slug 필수, region_slug/keyword_slug 형식, FAQ 질문·답변 짝과 글자 수, (지역, 키워드) 중복(파일 안 + 대기열), 템플릿은 template-a/template-b만(비면 template-a), 숫자로 저장된 전화번호 경고
+- slug 열은 양식에 없음. 비면 `{region_slug}-{keyword_slug}`. 머리글에 `URL Slug` 열을 넣으면 그 값을 씀
+- **문장 유사도**: 대표 문구+소개 문구를 정규화(NFKC, 소문자, 글자·숫자 외 제거) → 글자 3-gram Jaccard. 비교 대상은 같은 키워드의
+  - 대기열 항목(공개 전): 대기열 문구 / 공개된 대기열 항목: 연결된 랜딩페이지의 **현재** 문구
+  - 대기열을 거치지 않은 기존 페이지: 키워드 칸이 없어서 **페이지 제목에 키워드가 들어 있으면** 같은 키워드로 봄
+  - 같은 파일의 **앞쪽 행**(유사도 외 오류가 없는 행). 뒤 행과 비교하지 않는 이유: 서버가 나눠 저장할 때 앞 묶음이 먼저 대기열에 들어가므로 미리보기와 실제 저장 결과가 같아짐
+  - 기준값 기본 0.6 경고 / 0.8 오류, 설정에서 변경(`auto_publish_settings`, migration 014)
+- 대기열 `validation_errors`에는 오류·경고를 `level`과 함께 저장, `max_similarity`는 소수 넷째 자리까지 내림
+
+### 변경 파일
+
+| 파일 | 내용 |
+| --- | --- |
+| `supabase/migrations/014_bulk_upload_similarity_settings.sql` (신규) | `auto_publish_settings`에 similarity_warning_threshold(0.60)·similarity_error_threshold(0.80) + check(0 < 경고 < 오류 ≤ 1). 되돌리기 `supabase/rollback/014_down.sql` |
+| `lib/bulk-upload/columns.ts` | 양식 열 정의, 머리글 정규화 |
+| `lib/bulk-upload/parse.ts` | CSV(RFC 4180, UTF-8/BOM, 실패 시 CP949) + xlsx(`read-excel-file/universal`) → 행. 머리글 이름으로 열 찾기, 빈 줄 건너뜀(줄 번호 유지), 최대 2,000행·10MB, .xls 거부 |
+| `lib/bulk-upload/similarity.ts` | 정규화, 3-gram, Jaccard, 키워드별 역색인(`SimilarityIndex`) |
+| `lib/bulk-upload/check.ts` | 행 검사, 저장 상태 결정(ready/hold/건너뜀) |
+| `lib/bulk-upload/payload.ts` | 요청 나누기(크기·행 수), 서버 입력 확인(알려진 칸·길이·uuid) |
+| `lib/bulk-upload/context.ts` | 비교 정보 조회(전부 1,000행씩 끝까지, `.in()`은 100개씩) |
+| `lib/bulk-upload/enqueue.ts` | 서버 재검사 + 대기열 저장. 묶음 insert가 unique 충돌(23505)이면 한 행씩 다시 넣어 충돌 행만 건너뜀 |
+| `lib/bulk-upload/template.ts`, `app/admin/bulk/template/route.ts` | 양식 xlsx 생성(`write-excel-file`) |
+| `lib/bulk-publish-settings.ts` | 유사도 기준값 조회·저장(조회 실패 시 기본값 + 안내 문구) |
+| `lib/publish-queue.ts`, `lib/publish-queue-labels.ts` | 대기열 목록·건수·조회·수정·보류 해제·삭제 |
+| `app/admin/bulk/*`, `app/admin/queue/*`, `components/admin/{BulkUploadPanel,BulkCheckResultTable,QueueTable,QueueStateTabs,QueueSearchForm,QueueStateBadge,QueueItemForm,SimilaritySettingsPanel}.tsx` | 화면 |
+| `components/admin/AdminSidebar.tsx`, `app/admin/settings/{page,actions}.ts(x)` | 메뉴 2개, 설정 카드·저장 action |
+| `lib/landing-page-validation.ts` | `validateLandingPageRows`에 `rowNumbers` 옵션(빈 줄을 건너뛴 실제 줄 번호), 대량 등록용 issue code 추가. 기존 규칙·문구 변경 없음 |
+| `package.json` | dependencies `read-excel-file` 9.3.12(2026-10-07 배포), `write-excel-file` 4.1.1(2026-06-08). npm의 `xlsx`(SheetJS)는 0.18.5에서 멈춰 있고 알려진 취약점이 있어 쓰지 않음 |
+| `tests/helpers/pglite-supabase.ts` (신규) | PGlite 위에서 supabase-js 쿼리 빌더처럼 동작하는 테스트용 어댑터(authenticated 역할, 1,000행 제한, PGRST103, 오류 코드) |
+
+### 검증
+
+- `npm test` ✅ 15개 파일, 344개 테스트(이전 272 + 신규 72)
+  - `bulk-upload-parse.test.ts` (13): CSV 따옴표·줄바꿈·CRLF·BOM, UTF-8/CP949 한글, 머리글 이름 매칭(순서·공백·대소문자), 모르는 열 무시, 필수 머리글 없음·중복, 빈 줄(줄 번호 유지), 숫자 전화번호 경고, 2,000행 초과, xlsx 한글·빈 줄, **다운로드 양식을 그대로 올리면 예시 행 통과**, 손상 xlsx·xls·기타 형식·10MB 초과
+  - `bulk-upload-similarity.test.ts` (11): 정규화, 3-gram, Jaccard 값, 역색인 결과 = 모든 쌍 직접 계산, 64개 넘는 문서, 기준값 검사
+  - `bulk-upload-check.test.ts` (19): slug 자동 생성, 기존 규칙 그대로, 대량 등록 전용 규칙, 중복, 유사도 경고/오류/hold, 다른 키워드 제외, 앞 행만 비교, 요청 나누기(최대 크기 한글 행도 600KB 이하), 서버 입력 거부
+  - `bulk-upload-queue.db.test.ts` (18, PGlite + migration 001~014): ready 저장 값, 오류 행 건너뜀, 유사도 hold/건너뜀, 나눠 보낸 앞 묶음이 다음 묶음 비교 대상, 대기열 지역·키워드 중복, unique 충돌 시 그 행만 건너뜀, 저장 → 3단계 공개 함수로 공개(hold는 남음), 비교 대상 조회(공개 항목은 페이지 현재 문구, 제목 키워드 매칭, 자기 자신 제외, `%` 이스케이프), 목록 50개씩·범위 밖·검색·건수, 보류 해제·삭제 범위, 수정 재검사, 014 기본값·제약·롤백, Server Action 입력 거부
+  - `bulk-components.test.tsx` (11): 메뉴, 결과 표, 업로드 화면, 상태 탭, 목록 버튼, 수정 폼, 설정 카드, PGlite 데이터로 공개 대기열 페이지 렌더링(3페이지, 보류 탭+검색)
+- 일부러 망가뜨려서 테스트가 잡는지 확인(확인 후 원복): 오류 행도 유사도 비교 대상에 넣음 → 1개 실패, 공개 항목에 대기열 사본 문구 사용 → 1개, 23505 한 행씩 재시도 제거 → 1개, 보류 해제가 hold 외에도 적용 → 1개, 공개된 항목도 삭제 → 1개, 빈 줄 건너뛰기 제거 → 3개, 지역·키워드 중복 검사 제거 → 2개, 서버 재검사 없이 모두 ready → 5개
+- 속도: 같은 키워드 2,000행 + 기존 문구 3,000개 검사 약 0.7초(테스트 PC)
+- `npx tsc --noEmit` ✅ / `npx eslint` ✅ / `npx next build` ✅(빌드 로그의 "Dynamic server usage"는 기존과 같음)
+
+### 알아둘 것
+
+- 운영 적용 순서에 014 추가: **013 → 014 적용 후 코드 배포**. 014 없이 배포하면 유사도 기준은 기본값으로 동작(화면에 안내)하지만 설정 저장은 실패함
+- 화면 상호작용(파일 선택, 버튼 클릭)은 자동 테스트하지 않았다(요청대로 컴포넌트 테스트까지). 실제 브라우저 확인은 8단계 전 테스트 DB에서 할 것
+- 대기열 밖 기존 페이지를 "같은 키워드"로 보는 기준(제목에 키워드 포함)은 추정이다. 키워드가 제목에 없는 기존 페이지는 비교하지 않는다
+- 서비스 지역·업종(service_area, business_category)은 양식에 없어 비워 둔다(지역·키워드로 추측해 채우지 않음 — 기존 SEO 방침)
+- 미리보기와 실제 저장 결과가 다를 수 있는 경우: 미리보기 후 다른 사람이 대기열을 바꾼 경우, 또는 유사도 오류 행을 hold로 저장하지 않았는데 뒤 행이 그 행과만 비슷했던 경우. 최종 결과는 서버 재검사 기준이며 저장 후 화면에 표시됨
+- `npm audit --omit=dev`의 경고(next 16.3.4 critical, sharp, source-map-js)는 이번 변경 전부터 있던 것. 새 라이브러리 관련 경고는 없음. next 보안 업데이트는 별도로 검토 필요
+
 ## 다음 단계
 
-1. bulk publish(대량 생성·공개) 기능 본 작업 — 행 검사는 `validateLandingPageRows` 사용, 대기열 저장은 `landing_page_queue`
-2. 운영 적용 전: 테스트 DB(또는 로컬 Supabase)에서 실제 PostgREST로 rpc 호출·백업/복구·1,000행 넘는 데이터 재확인
-3. 마지막 단계: 운영 DB에 013 적용(사용자 지시 후) → 코드 배포
+1. 5단계 AI 생성 — 생성 결과도 `checkBulkUploadRows`로 검사해 대기열(draft)에 넣기
+2. 운영 적용 전: 테스트 DB(또는 로컬 Supabase)에서 실제 PostgREST·브라우저로 rpc 호출·업로드·백업/복구·1,000행 넘는 데이터 재확인
+3. 마지막 단계: 운영 DB에 013 → 014 적용(사용자 지시 후) → 코드 배포
