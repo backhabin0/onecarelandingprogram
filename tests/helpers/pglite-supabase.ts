@@ -68,6 +68,28 @@ export class PgliteSupabase {
     return new PgQueryBuilder(this, table);
   }
 
+  /**
+   * supabase.rpc(fn, args)처럼 public 함수를 이름 붙인 인자로 부른다.
+   * PostgREST처럼 표를 돌려주는 함수는 행 배열, 값 하나를 돌려주는 함수는 그 값을 돌려준다.
+   */
+  async rpc(fn: string, args: Record<string, unknown> = {}): Promise<PgResponse> {
+    try {
+      const keys = Object.keys(args);
+      const named = keys.map((key, i) => `${ident(key)} => $${i + 1}`).join(", ");
+      const [meta] = await this.run(
+        "select proretset from pg_proc where proname = $1 and pronamespace = 'public'::regnamespace limit 1",
+        [fn]
+      );
+      const rows = await this.run(`select * from public.${ident(fn)}(${named})`, keys.map((k) => args[k]));
+      if (meta?.proretset) return { data: rows, error: null, count: null };
+      const first = rows[0];
+      return { data: first ? Object.values(first)[0] ?? null : null, error: null, count: null };
+    } catch (err) {
+      const e = err as { message?: string; code?: string };
+      return { data: null, error: { message: e.message ?? String(err), code: e.code ?? "" }, count: null };
+    }
+  }
+
   /** 지정한 역할로 SQL을 실행한다 */
   async run(sql: string, params: unknown[]): Promise<Row[]> {
     return this.db.transaction(async (tx) => {

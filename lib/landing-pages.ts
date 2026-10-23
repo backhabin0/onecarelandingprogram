@@ -567,6 +567,8 @@ export interface SitemapLandingPageRow {
   slug: string;
   updated_at: string;
   created_at: string;
+  /** 대기열에서 공개된 시각(013). 관리자가 직접 만든 페이지는 null */
+  published_at: string | null;
 }
 
 export interface GetPublicLandingPagesForSitemapResult {
@@ -592,7 +594,7 @@ export async function getPublicLandingPagesForSitemap(): Promise<GetPublicLandin
       supabase
         .from("landing_pages")
         .select(
-          "slug, updated_at, created_at, seo_settings:landing_page_seo_settings(seo_noindex)"
+          "slug, updated_at, created_at, published_at, seo_settings:landing_page_seo_settings(seo_noindex)"
         )
         .eq("status", "public")
         .order("created_at", { ascending: false })
@@ -608,10 +610,11 @@ export async function getPublicLandingPagesForSitemap(): Promise<GetPublicLandin
     return {
       data: rows
         .filter((row) => row.seo_settings?.seo_noindex !== true)
-        .map(({ slug, updated_at, created_at }) => ({
+        .map(({ slug, updated_at, created_at, published_at }) => ({
           slug,
           updated_at,
           created_at,
+          published_at: published_at ?? null,
         })),
       error: null,
     };

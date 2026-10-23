@@ -18,8 +18,8 @@
 | 3 | 공개 대기열 DB(migration 013, 공개 함수) | ✅ 완료 (운영 미적용) | `3aa1a1b` |
 | 4 | 엑셀 업로드 + 검사 + 공개 대기열 화면 | ✅ 완료 (migration 014 운영 미적용) | `1e6f06d` |
 | 5 | AI용 프롬프트 만들기(AI API 연결 없음) | ✅ 완료 | `3366e56` |
-| 6 | 매일 자동 공개(Supabase pg_cron) | ⏳ 예정 | — |
-| 7 | 오늘 공개 목록 화면 | ⏳ 예정 | — |
+| 6 | 매일 자동 공개(Supabase pg_cron) + 검색엔진 알림(IndexNow) | ✅ 완료 (migration 015·cron 등록 운영 미적용) | (바로 다음 문서 커밋에서 기록) |
+| 7 | SEO 강화 + 오늘 공개 목록 | ⏳ 예정 | — |
 | 8 | 운영 적용·전체 테스트·Next.js 보안 업데이트·사용 설명서 | ⏳ 예정 | — |
 
 ## 단계별 내용
@@ -55,12 +55,16 @@
 - 붙여넣기 업로드: AI가 준 표(탭 구분, 머리글 있음/없음, 마크다운 표도 허용)를 붙여넣으면 엑셀 업로드와 같은 검사
 - 업로드 검사에 소개 문구·FAQ의 전화번호·금액 패턴 경고 추가
 
-### 6. 매일 자동 공개
-- Supabase pg_cron으로 매일 정해진 KST 시각에 `auto_publish_settings`(enabled, daily_limit)를 확인하고 `publish_queued_landing_pages` 실행
-- 실행 결과는 `publish_runs`에 기록
+### 6. 매일 자동 공개 + 검색엔진 알림(IndexNow)
+- migration 015: 래퍼 함수 `run_auto_publish(p_manual)` — 매일 실행은 `auto_publish_settings.enabled`일 때만, 하루 개수 = daily_limit(1~100, 기본 50). 실행 기록에 자동/지금 실행 구분
+- pg_cron 등록은 `supabase/manual/015_cron_schedule.sql`(매일 00:00 UTC = 09:00 KST)로 분리 — pg_cron이 꺼져 있어도 migration은 실패하지 않음
+- 관리자 설정 화면: 자동 공개 켜기/끄기, 하루 개수, 최근 실행 기록, '지금 1회 실행'(같은 날 중복 차단)
+- IndexNow: 공개 후 앱이 "아직 알리지 않은 공개 페이지"를 모아 네이버 IndexNow(`searchadvisor.naver.com/indexnow`, 참여 엔진 간 공유)로 전송, 결과 기록·실패 시 재시도. 관리자 대시보드 접속 시·'지금 1회 실행' 뒤·`/api/indexnow`(로그인 또는 CRON_SECRET, Vercel Cron 매일 00:10 UTC)
+- sitemap lastmod = published_at·updated_at 중 최신
 
-### 7. 오늘 공개 목록 화면
+### 7. SEO 강화 + 오늘 공개 목록
 - 오늘(KST) 공개된 페이지와 실패 항목, 실행 기록을 관리자 화면에서 확인
+- 검색 상단 노출에 유리하도록 페이지 SEO 보강(세부 범위는 7단계 요청 때 확정)
 
 ### 8. 운영 적용·전체 테스트·사용 설명서
 - 테스트 DB(또는 로컬 Supabase)에서 실제 PostgREST로 전체 재확인(1,000행 넘는 데이터, rpc, 백업/복구)

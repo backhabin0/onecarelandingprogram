@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { getPublicLandingPagesForSitemap } from "@/lib/landing-pages";
 import { getAbsoluteUrl } from "@/lib/site";
+import { getSitemapLastModified } from "@/lib/sitemap-lastmod";
 
 /**
  * status = 'public'이면서 seo_noindex가 true가 아닌 landing_pages만 포함한다
@@ -17,7 +18,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   return landingPages.map((page) => ({
     url: getAbsoluteUrl(`/${page.slug}`),
-    lastModified: new Date(page.updated_at || page.created_at),
+    lastModified: getSitemapLastModified(page),
     changeFrequency: "weekly",
     priority: 0.7,
   }));

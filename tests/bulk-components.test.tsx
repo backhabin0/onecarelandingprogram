@@ -28,6 +28,7 @@ const { default: QueueStateTabs } = await import("@/components/admin/QueueStateT
 const { default: QueueTable } = await import("@/components/admin/QueueTable");
 const { default: QueueItemForm } = await import("@/components/admin/QueueItemForm");
 const { default: SimilaritySettingsPanel } = await import("@/components/admin/SimilaritySettingsPanel");
+const { default: AutoPublishSettingsPanel } = await import("@/components/admin/AutoPublishSettingsPanel");
 const { default: AdminQueuePage } = await import("@/app/admin/queue/page");
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
@@ -244,6 +245,34 @@ describe("공개 대기열 화면", () => {
     expect(options).toEqual(["ready", "hold", "draft"]);
     // 글자 수 제한은 공용 상수
     expect(html).toMatch(/id="queue-businessName"[^>]*maxLength="100"/);
+  });
+
+  it("설정: 매일 자동 공개(켜기·하루 개수·지금 실행·실행 기록·IndexNow)", () => {
+    const html = renderToStaticMarkup(
+      <AutoPublishSettingsPanel
+        enabled
+        dailyLimit={30}
+        limitRange={{ min: 1, max: 100 }}
+        runs={[
+          { id: "r1", run_date: "2026-10-23", published_count: 30, failed_count: 2, finished_at: "2026-10-23T00:00:05.000Z", trigger: "cron" },
+        ]}
+        indexNow={{
+          configured: true,
+          detail: "https://onecare.example/key.txt",
+          pendingCount: 5,
+          recent: [{ created_at: "2026-10-23T00:01:00.000Z", trigger: "admin", url_count: 30, success: false, status_code: 429, error: "HTTP 429" }],
+        }}
+        loadError={null}
+      />
+    );
+    const t = text(html);
+    expect(html).toMatch(/id="autoPublishEnabled"[^>]*checked=""/);
+    expect(html).toMatch(/id="autoPublishDailyLimit"[^>]*max="100"[^>]*value="30"/);
+    expect(t).toContain("지금 1회 실행");
+    expect(t).toMatch(/2026-10-23 자동 30 2/);
+    expect(t).toMatch(/아직 알리지 않은 공개 페이지 5 ?개/);
+    expect(t).toContain("키 파일: https://onecare.example/key.txt");
+    expect(t).toContain("실패: HTTP 429");
   });
 
   it("설정: 유사도 기준값 입력", () => {

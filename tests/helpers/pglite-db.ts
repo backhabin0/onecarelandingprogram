@@ -36,6 +36,19 @@ const SUPABASE_SHIM_SQL = `
   create function auth.role() returns text language sql stable as
     $$ select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), current_user::text) $$;
 
+  -- Supabase Vault(기본 설치). 테스트에서는 암호화 없이 같은 모양만 흉내 낸다.
+  create schema vault;
+  create table vault.secrets (
+    id uuid primary key default gen_random_uuid(),
+    name text unique,
+    secret text not null
+  );
+  create view vault.decrypted_secrets as
+    select id, name, secret as decrypted_secret from vault.secrets;
+  create function vault.create_secret(new_secret text, new_name text, new_description text default '')
+    returns uuid language sql as
+    $$ insert into vault.secrets (name, secret) values (new_name, new_secret) returning id $$;
+
   -- 005 migration이 쓰는 storage 테이블(필요한 컬럼만)
   create schema storage;
   grant usage on schema storage to anon, authenticated, service_role;

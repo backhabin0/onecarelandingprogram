@@ -5,14 +5,27 @@ import SiteVerificationSettingsPanel from "@/components/admin/SiteVerificationSe
 import SimilaritySettingsPanel from "@/components/admin/SimilaritySettingsPanel";
 import { getSiteVerificationSettings } from "@/lib/site-verification";
 import { getSimilarityThresholds } from "@/lib/bulk-publish-settings";
+import AutoPublishSettingsPanel from "@/components/admin/AutoPublishSettingsPanel";
+import {
+  DAILY_LIMIT_MAX,
+  DAILY_LIMIT_MIN,
+  getAutoPublishSettings,
+  getRecentPublishRuns,
+} from "@/lib/auto-publish";
+import { getIndexNowStatus } from "@/lib/indexnow";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 // 저장 직후 다음 요청부터 최신 DB 값을 보여줘야 하므로 캐시하지 않는다.
 export const dynamic = "force-dynamic";
 
 export default async function AdminSettingsPage() {
-  const [siteVerification, similarity] = await Promise.all([
+  const supabase = await getSupabaseServerClient();
+  const [siteVerification, similarity, autoPublish, runs, indexNow] = await Promise.all([
     getSiteVerificationSettings(),
     getSimilarityThresholds(),
+    getAutoPublishSettings(),
+    getRecentPublishRuns(10),
+    getIndexNowStatus(supabase),
   ]);
 
   return (
@@ -27,6 +40,20 @@ export default async function AdminSettingsPage() {
       <SimilaritySettingsPanel
         initialThresholds={similarity.thresholds}
         loadError={similarity.error}
+      />
+
+      <AutoPublishSettingsPanel
+        enabled={autoPublish.data.enabled}
+        dailyLimit={autoPublish.data.dailyLimit}
+        limitRange={{ min: DAILY_LIMIT_MIN, max: DAILY_LIMIT_MAX }}
+        runs={runs.data}
+        indexNow={{
+          configured: indexNow.config.ok,
+          detail: indexNow.config.ok ? indexNow.config.keyLocation : indexNow.config.reason,
+          pendingCount: indexNow.pendingCount,
+          recent: indexNow.recent,
+        }}
+        loadError={autoPublish.error ?? runs.error ?? indexNow.error}
       />
 
       <Card className="p-6">

@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-23 (5단계 완료, 운영 DB 미적용)
+마지막 업데이트: 2026-10-23 (6단계 완료, 운영 DB 미적용)
 
 ## 배경
 
@@ -329,8 +329,61 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - `npx tsc --noEmit` ✅ / `npx eslint` ✅ / `npx next build` ✅(빌드 로그 "Dynamic server usage" 4줄은 기존과 같음)
 - 새 migration·라이브러리·환경변수 없음
 
+## 6단계 — 매일 자동 공개 + 검색엔진 알림(IndexNow) + sitemap lastmod ✅ 완료 (운영 미적용)
+
+### 매일 자동 공개
+
+- `supabase/migrations/015_auto_publish_indexnow.sql`
+  - `run_auto_publish(p_manual boolean default false)`: 설정 행을 읽어 `publish_queued_landing_pages(daily_limit)` 호출
+    - 매일 실행(`p_manual=false`): `auto_publish_settings.enabled = true`일 때만. 꺼져 있으면 `{status: "disabled"}`, 공개·실행 기록 모두 없음(그날 나중에 '지금 실행' 가능)
+    - '지금 1회 실행'(`p_manual=true`): 켜짐/꺼짐과 관계없이 실행
+    - 같은 KST 날짜 중복 차단은 3단계 공개 함수 그대로. 실행 기록 `publish_runs.trigger`에 cron/manual 기록(새 컬럼)
+    - 실행 권한: authenticated + postgres(pg_cron 작업 소유자)만
+  - 하루 개수 제약을 1~100으로 좁힘(013은 1~1000)
+- **pg_cron 등록은 별도 파일 `supabase/manual/015_cron_schedule.sql`**(migration 폴더 밖, 자동 실행 안 됨)
+  - 운영 적용 방법(8단계, 사용자 지시 후): ① migration 015 적용 ② Dashboard > Database > Extensions에서 pg_cron 켜기 ③ 파일의 [A] 실행 → `cron.job`에 `onecare-daily-auto-publish`, `0 0 * * *`(매일 00:00 UTC = 09:00 KST) 확인 ④ 관리자 설정에서 "자동 공개 켜기"(기본 꺼짐)
+  - 여러 번 실행해도 작업은 1개(같은 이름은 지우고 다시 등록). 완전히 멈출 때는 [C], 잠시 멈출 때는 설정에서 끄기
+- 관리자 설정 화면 "매일 자동 공개" 카드: 켜기/끄기, 하루 개수(1~100, 기본 50), 최근 실행 기록 10개(날짜·방식·공개·실패·끝난 시각), '지금 1회 실행'(확인 창, 같은 날 이미 실행됐으면 안내만)
+
+### 검색엔진 알림(IndexNow)
+
+- 문서 확인(2026-10-23): indexnow.org/documentation — POST JSON `{host, key, keyLocation, urlList}`, 한 번에 최대 10,000개, 200=접수 / 202=접수(키 확인 대기) / 400·403·422·429=실패, 키는 영문·숫자·하이픈 8~128자, 키 파일은 사이트 루트 `{key}.txt`. indexnow.org/faq — 네이버 엔드포인트 `https://searchadvisor.naver.com/indexnow`, **참여 엔진 한 곳에 보내면 Bing 등 다른 IndexNow 엔진에도 공유됨** → 네이버 한 곳에만 보낸다
+  - 네이버 서치어드바이저 안내 페이지는 이 환경에서 열리지 않아 직접 확인하지 못했다(사이트 등록 필요 여부 등은 운영 적용 때 서치어드바이저에서 확인할 것)
+- 키: `public/d8480180f2798f02382139f1dfd53952.txt`(내용 = 같은 값). 운영 환경변수 `INDEXNOW_KEY=d8480180f2798f02382139f1dfd53952`로 설정해야 동작. IndexNow 키는 원래 공개되는 값(비밀 아님)
+- 대상: **공개 중 + 대기열에서 공개(published_at 있음) + noindex 아님 + 아직 알리지 않음**. 관리자가 직접 만든 기존 페이지는 보내지 않음
+- 기록: `indexnow_page_status`(페이지별 알린 시각, landing_pages에 컬럼을 두면 updated_at 트리거 때문에 sitemap lastmod가 거짓으로 바뀌어 별도 테이블), `indexnow_submissions`(시도별 성공/실패·응답 코드·오류)
+- 실패해도 공개에는 영향 없음. 실패한 페이지는 기록되지 않으므로 다음 전송 때 자동으로 다시 대상(재시도)
+- 언제 보내나
+  1. 관리자 대시보드(`/admin`) 접속 시 — 응답 뒤(`after`) 자동 전송. 최근 10분 안에 실패했으면 쉬어 감
+  2. 설정 화면 '지금 1회 실행'으로 공개된 페이지가 있으면 응답 뒤 전송, '지금 보내기' 버튼
+  3. `/api/indexnow`(GET/POST): 로그인 사용자, 또는 `Authorization: Bearer <CRON_SECRET>`. `vercel.json`에 Vercel Cron `10 0 * * *`(매일 00:10 UTC, 자동 공개 10분 뒤) 추가 — Vercel Cron은 CRON_SECRET이 설정돼 있으면 이 헤더를 붙여 부른다
+- **이 프로젝트는 Service Role Key를 쓰지 않으므로**, 로그인 세션 없는 예약 호출은 anon 키로 SECURITY DEFINER 함수 2개(`indexnow_pending_pages`, `indexnow_record_submission`)만 부른다. 함수 안에서 호출자 확인: authenticated면 허용, 아니면 넘겨받은 비밀값이 **Supabase Vault의 `indexnow_cron_secret`**과 같을 때만 허용. 테이블 직접 읽기·쓰기는 anon에게 막혀 있음
+  - 운영 설정: 환경변수 `CRON_SECRET`(16자 이상 무작위) + 같은 값을 Vault에 등록(`supabase/manual/015_cron_schedule.sql` [B]). 둘 중 하나라도 없으면 예약 호출만 실패하고, 대시보드 접속·설정 화면 전송은 그대로 동작
+- 사이트 주소(`NEXT_PUBLIC_SITE_URL`)가 https 공개 주소가 아니면(localhost, http) 보내지 않음
+- `.env.local.example`에 `INDEXNOW_KEY`, `CRON_SECRET` 이름 추가
+
+### sitemap
+
+- 각 페이지 `lastmod` = `published_at`과 `updated_at` 중 최신(둘 다 없으면 created_at). `lib/sitemap-lastmod.ts`
+
+### 검증
+
+- `npm test` ✅ 18개 파일, 407개 테스트(이전 380 + 신규 27)
+  - `tests/auto-publish-indexnow.db.test.ts` (20, PGlite + migration 001~015): 015 제약·컬럼·롤백 후 재적용, 래퍼(꺼짐이면 아무것도 안 함, 하루 개수 반영·trigger 기록·같은 날 차단, 지금 실행은 꺼져 있어도 실행, postgres 실행 가능·anon/service_role 거부), **cron 등록 SQL을 흉내 낸 cron 스키마에 두 번 실행 → 작업 1개, 등록 명령 실행 시 공개**, 앱 설정·지금 실행·실행 기록, 키 파일 이름=내용, 전송 대상 선정, 공식 형식 POST(가짜 fetch), 202 성공, 429·네트워크 오류 후 재시도, 설정 없음/localhost 미전송, 자동 전송 10분 쉬기, 상태 조회, anon 비밀값 확인(Vault), `/api/indexnow` 401·CRON_SECRET·로그인·502
+  - `tests/sitemap-lastmod.test.ts` (6): 최신 시각 선택, 공개 시각 없음, 날짜 아닌 값, sitemap 항목별 lastmod
+  - `bulk-components.test.tsx`: 자동 공개 설정 카드 렌더링
+- 일부러 망가뜨려서 테스트가 잡는지 확인(확인 후 원복): 래퍼가 enabled 무시 → 1개 실패, daily_limit 대신 50 → 4개, noindex도 대상 → 7개, 실패해도 완료 표시 → 2개, anon 비밀값 없이 허용 → 1개, 202를 실패로 → 1개, 자동 전송 쿨다운 제거 → 1개, lastmod를 updated_at만 → 2개
+- `npx tsc --noEmit` ✅ / `npx eslint` ✅ / `npx next build` ✅(빌드 로그 "Dynamic server usage"는 기존과 같음)
+- 외부 호출 없음(IndexNow는 가짜 fetch), 운영 DB 접속 없음
+
+### 알아둘 것
+
+- 운영 적용 순서: migration **013 → 014 → 015** → (pg_cron 켜고) `supabase/manual/015_cron_schedule.sql` [A] → 환경변수 `INDEXNOW_KEY`·`CRON_SECRET` + Vault [B] → 코드 배포 → 설정에서 자동 공개 켜기
+- 실제 pg_cron·Vault·Vercel Cron·네이버 IndexNow 응답은 아직 확인하지 않음(PGlite에는 pg_cron이 없어 cron 스키마를 흉내 내 SQL만 확인). 운영 적용 후 첫 실행 결과를 설정 화면의 실행 기록·IndexNow 기록으로 확인할 것
+- 백업 파일에는 IndexNow 기록과 실행 기록을 넣지 않았다(복구 후에는 공개 페이지가 다시 "아직 알리지 않음"이 되어 한 번 더 전송될 수 있음 — 검색엔진에 문제 되지 않는 수준)
+
 ## 다음 단계
 
-1. 6단계: 매일 자동 공개(Supabase pg_cron)
+1. 7단계: SEO 강화 + 오늘 공개 목록
 2. 운영 적용 전: 테스트 DB(또는 로컬 Supabase)에서 실제 PostgREST·브라우저로 rpc 호출·업로드·붙여넣기·백업/복구·1,000행 넘는 데이터 재확인
-3. 마지막 단계(8단계): Next.js 보안 업데이트, 운영 DB에 013 → 014 적용(사용자 지시 후) → 코드 배포
+3. 마지막 단계(8단계): Next.js 보안 업데이트, 운영 DB에 013 → 014 → 015 적용 + cron 등록(사용자 지시 후) → 코드 배포
