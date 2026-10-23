@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-23 (8-3 운영 DB migration 013~016 적용 완료, 코드 배포 전)
+마지막 업데이트: 2026-10-23 (8-4 운영 배포 완료 — main `3664625`, pg_cron 미등록)
 
 ## 배경
 
@@ -572,6 +572,31 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 테스트: 템플릿 A/B 경로 항목이 `["군포시", "페이지"]`, 사이트 루트 링크·"홈" 없음, BreadcrumbList 위치 1·2, 시/군 없는 페이지는 생략, 모음 페이지에 경로·BreadcrumbList 없음. "홈"을 다시 넣으면 5개 실패하는 것 확인
 - `npm test` 457개 ✅ / `npx tsc --noEmit` ✅ / `npx eslint` ✅ / `npx next build` ✅
 
+## 8단계 — 8-4 운영 배포 ✅ (2026-10-23)
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | 배포 전 확인(읽기) | Vercel 프로젝트 `onecarelandingprogram`(`prj_W8mBWxnuFo0HqIx4di37MunPiTsS`, 팀 `habin-s-projects`) ↔ GitHub `backhabin0/onecarelandingprogram` **main 자동 배포**(createDeployments enabled). 배포 전 운영: **`dpl_A76SdL2cfJ4AnQthqyLgKUdxHrcv`**(main `4ddf124`, 2026-09-13) ← 되돌리기용 |
+| 2 | Vercel Production 환경변수 | `INDEXNOW_KEY`(Config, public 키 파일 값과 같음), `CRON_SECRET`(Secret, 영문·숫자 48자, 확인용 sha256 앞 12자 `7de216bd6c0c`) — 값은 어디에도 출력·저장 안 함 |
+| 3 | Supabase Vault | `vault.create_secret(<CRON_SECRET>, 'indexnow_cron_secret', ...)` — DB 안에서 sha256끼리 비교해 같은 값 확인 |
+| 4 | PR·머지 | [PR #1](https://github.com/backhabin0/onecarelandingprogram/pull/1)(커밋 18·파일 126, 미리보기 빌드 성공) → 사용자 "머지해" → merge commit **`3664625`** → 자동 배포 **`dpl_26sZGXgMipT3h8BqtphNzbZ6vPRi`** READY(약 1분) |
+| 5 | 배포 직후 확인(GET) | 아래 표 — 모두 정상 |
+
+| 확인 | 결과 |
+| --- | --- |
+| sitemap.xml | 200, **1,047개**(중복 없음, 모두 lastmod) — 1,000개 잘림 해소. 기존 페이지는 시/군이 비어 있어 허브 0개가 정상 |
+| 랜딩 3개(sitemap 처음·중간·끝) | 모두 200, H1 1개, JSON-LD WebPage·LocalBusiness·FAQPage(모두 유효한 JSON), canonical 정상, index/follow. 시/군이 없어 경로 표시·BreadcrumbList 없음(정상), "홈"·사이트 루트 링크 없음 |
+| `/area/gunpo` | 404(허브 0개라 정상) |
+| `/d8480180f2798f02382139f1dfd53952.txt` | 200, 내용 = 키 |
+| `/api/indexnow`(비밀값 없이) | 401(거절 — 검색엔진에 보내지 않음) |
+| `/admin` / `/login` / `/` | 307 → /login / 200 / 307 → /admin |
+| robots.txt | 200, Sitemap 줄 있음 |
+| Vercel Cron | `/api/indexnow` `10 0 * * *` 등록됨(새 배포 기준) |
+
+- **Vercel Cron(IndexNow)은 내일부터 매일 00:10 UTC(09:10 KST)에 실행됨**. 보내는 대상은 `published_at`이 있는(대기열로 공개된) 페이지뿐이라, 기존 1,047개는 `published_at`이 비어 있어 **보내지 않음** → 대기열로 처음 공개하기 전까지는 보낼 것이 0개
+- pg_cron 켜기·매일 자동 공개 등록은 하지 않음(다음 단계)
+- 되돌리기가 필요하면: Vercel에서 `dpl_A76SdL2cfJ4AnQthqyLgKUdxHrcv`로 promote(또는 `vercel rollback`). DB(013~016)는 추가만 했으므로 이전 코드와 함께 동작
+
 ## 8-2 이후 운영 적용 체크리스트
 
 표시: 🙋 = 사용자가 직접 해야 함(대시보드 조작·결정·비밀값) / 🤖 = Claude가 할 수 있음(지시 후) / 🤝 = 함께
@@ -588,18 +613,19 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - [x] 🤖 DB 덤프(SELECT만) — `C:\Users\user\Documents\onecare-backup\2026-10-23_1853\`(8-3)
 - [x] 🤝 migration **013 → 014 → 015 → 016** 하나씩 적용 + 각 단계 확인(8-3, 아래 결과 표)
 - [ ] 🙋 Dashboard > Database > Extensions에서 **pg_cron 켜기** → `supabase/manual/015_cron_schedule.sql` [A] 실행 → `select * from cron.job`으로 `onecare-daily-auto-publish`(`0 0 * * *`) 확인 — 코드 배포 뒤 자동 공개를 켜기 전까지만 하면 됨(지금 켜도 설정이 꺼짐이라 아무것도 공개하지 않음)
-- [ ] 🙋 16자 이상 무작위 **CRON_SECRET** 만들기 → 같은 값을 Vault에 등록(`015_cron_schedule.sql` [B]) — 값은 git·채팅에 남기지 않기
+- [x] 🤖 **CRON_SECRET**(48자) 만들기 → Vault `indexnow_cron_secret` 등록(8-4, 값은 출력·저장 안 함)
 
 ### C. Vercel 환경변수·배포
-- [ ] 🙋 Vercel(onecarepage.co.kr 프로젝트) 환경변수 추가: `INDEXNOW_KEY=d8480180f2798f02382139f1dfd53952`, `CRON_SECRET=<B에서 만든 값>`, `NEXT_PUBLIC_SITE_URL`이 `https://onecarepage.co.kr`인지 확인
-- [ ] 🤖 `feature/bulk-publish` → `main` PR 준비(변경 요약·적용 순서 포함) → 🙋 **머지·Production 배포 승인**(반드시 B 완료 후)
-- [ ] 🙋 Vercel > Settings > Cron Jobs에 `/api/indexnow`(`10 0 * * *`)가 보이는지 확인
+- [x] 🤖 Vercel Production 환경변수 `INDEXNOW_KEY`·`CRON_SECRET` 추가(8-4). `NEXT_PUBLIC_SITE_URL`은 있음(값은 확인 안 함 — canonical이 `https://onecarepage.co.kr/...`로 나와 정상)
+- [x] 🤖 PR #1 → 🙋 머지 승인 → 자동 배포 `dpl_26sZGXgMipT3h8BqtphNzbZ6vPRi`(8-4)
+- [x] 🤖 Vercel Cron `/api/indexnow`(`10 0 * * *`) 등록 확인(API로, 8-4)
 
 ### D. 배포 직후 확인
-- [ ] 🤖 sitemap.xml URL 수 = 공개+noindex 아닌 페이지 수(현재 1,047) + 지역 모음 페이지 수인지(읽기 전용 GET)
+- [x] 🤖 sitemap.xml 1,047개(허브 0개 — 기존 페이지 시/군 없음, 정상)(8-4)
 - [ ] 🤝 관리자 화면: 대시보드 숫자(1,047), 랜딩 목록 페이지 나눔, AI 대량 생성(양식 다운로드·붙여넣기 검사), 공개 대기열, 설정(유사도 기준·자동 공개·IndexNow 상태)
-- [ ] 🤝 공개 페이지 1개를 골라 H1·경로·구조화 데이터 확인(Google 리치 결과 테스트, 네이버 서치어드바이저 웹 페이지 최적화 검사) — 기존 페이지는 지역·키워드 칸이 없으므로 예전과 같게 보이는 것이 정상
-- [ ] 🙋 `https://onecarepage.co.kr/d8480180f2798f02382139f1dfd53952.txt`가 키 값을 그대로 보여주는지 확인
+- [x] 🤖 랜딩 3개 H1·구조화 데이터·canonical 확인(8-4)
+- [ ] 🙋 (선택) Google 리치 결과 테스트·네이버 서치어드바이저 웹 페이지 최적화 검사 — 기존 페이지는 지역·키워드 칸이 없으므로 예전과 같게 보이는 것이 정상
+- [x] 🤖 IndexNow 키 파일 200·내용 일치(8-4)
 - [ ] 🙋 네이버 서치어드바이저에 사이트가 등록·소유 확인되어 있는지, IndexNow 사용 조건 확인 → 설정 화면 '지금 보내기'로 첫 전송, 결과 기록 확인
 
 ### E. 자동 공개 시작
@@ -613,6 +639,6 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 
 ## 다음 단계
 
-1. 체크리스트 B 남은 것(pg_cron 켜기·CRON_SECRET/Vault — 사용자) → C(Vercel 환경변수, PR·배포 승인)
-2. 그 다음 D~F는 사용자 지시에 따라 한 단계씩
+1. 체크리스트 D 남은 것: 관리자 화면 확인(🤝), 네이버 서치어드바이저·IndexNow 첫 전송(🙋)
+2. pg_cron 켜기·매일 자동 공개 등록(B, 사용자 지시 후) → E 자동 공개 시작 → F 사용 설명서
 3. (선택) 남은 npm audit 중 메이저 변경 없는 것(`npm audit fix`) 정리
