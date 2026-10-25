@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-25 (feature/seo-geo: 공개 홈·llms.txt·구조화 데이터 정리, 운영 미배포)
+마지막 업데이트: 2026-10-25 (PR #2 머지·운영 배포 완료 — 공개 홈·llms.txt·017 적용, 대표 업체는 사용자가 입력 예정)
 
 ## 배경
 
@@ -722,3 +722,35 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 백업 파일(version 3)에 `site_profile`은 아직 들어 있지 않음(4칸이라 복구 후 다시 입력하면 됨) — 필요하면 version 4로
 - 기존 1,047개의 업체명 칸은 대부분 제목형 문구라 구조화 데이터 `name`도 그 문구 그대로 나감 — 관리자 화면에서 업체명을 실제 상호로 고치면 해결(코드로 추측해서 바꾸지 않음)
 - 이미 공개된 FAQ 평서문 8개(대기열 10개 페이지)는 그대로 — 고치려면 관리자 화면 FAQ에서 질문 문장으로 수정
+
+## 2026-10-25 운영 작업 기록
+
+### 운영 DB 데이터 수정(사용자 승인 후, 각각 한 트랜잭션)
+
+| 작업 | 대상 | 결과 | 백업·되돌리기 |
+| --- | --- | --- | --- |
+| 업체명 정리 | 전화 숫자 `01020688782`인 랜딩 1,033개 중 이미 '원케어배관'인 1개를 뺀 1,032개 | `business_name` → '원케어배관'(다른 업종 0개라 제외 없음). `updated_at`은 트리거가 갱신(사용자 선택). 다른 번호 그룹·다른 칸 해시 비교로 변경 없음 확인 | `C:\Users\user\Documents\onecare-backup\2026-10-25_business-name\` — `backup.json`, `update.sql`, `rollback.sql`(업체명 + 원래 updated_at 복원) |
+| 대기열 10개 전화번호 | `published_at` 있는 10개(모두 phone 비어 있었음) | `phone` → '010-2068-8782'. 전화 버튼·Organization telephone·자동 FAQ "전화 상담은…" 생김 | `C:\Users\user\Documents\onecare-backup\2026-10-25_queue10-phone\` — 같은 구성 |
+
+### PR #2 배포
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | 운영 DB 백업(SELECT만) | `C:\Users\user\Documents\onecare-backup\2026-10-25_1938_pre-pr2\` — 11개 테이블 전부 DB 행 수 = 저장 행 수(landing_pages 1,057, events 592, faqs 42, seo 16, 상담 7, queue 10, indexnow 10·1, publish_runs 1, 설정 2) + `schema.json`(칸 116·제약 61·인덱스 26·트리거 12·함수 7·정책 29·확장 6·버킷 1·cron 1) |
+| 2 | migration 017 | 사전 점검(없음) → 원본에 `begin;`/`commit;`만 붙여 실행 ✅. `site_profile` 1행(전부 빈 값)·RLS·정책 3개(authenticated 조회·수정, anon 조회). 사이트(main 코드) 정상 |
+| 3 | 배포 전 운영 | **`dpl_26sZGXgMipT3h8BqtphNzbZ6vPRi`**(PR #1, 10-23) ← 되돌리기용 |
+| 3 | 머지 | 사용자 "머지해" → PR #2 merge commit **`a8228cf`**(미리보기 빌드 성공·충돌 없음 확인 후) → 자동 배포 **`dpl_5SPe4Md9ChMBCp4gnmMab9v5PAkt`** READY(10-25 19:55 KST) |
+| 4 | 배포 후 확인(GET) | 아래 표 — 모두 정상 |
+
+| 확인 | 결과 |
+| --- | --- |
+| `/` | 200 공개 홈, `lang="ko"`, index/follow, H1 1개, 서비스 4개(누수탐지·배관청소·정화조막힘·하수구뚫음)·허브 3개 링크, `/admin`·`/login` 링크 없음. 대표 업체 미입력이라 WebSite JSON-LD만(이름 = 도메인) — 설계대로 |
+| `/admin`, `/admin/settings` | 307 → `/login`, `/login` 200 |
+| robots.txt | `Allow: / /area/ /llms.txt`, `Disallow: /admin /login /api`, Sitemap 줄 |
+| `/llms.txt` | 200 `text/plain; charset=utf-8`, 서비스 4·허브 3, 문의는 "상담 신청 양식"만(대표 업체 미입력) |
+| sitemap.xml | **1,061개 = 랜딩 1,057 + 허브 3 + 홈 1**, 중복 0. 첫 항목 홈, lastmod 2026-10-25T10:14:01Z(대기열 10개 전화번호 수정 시각) |
+| 랜딩 3개 | 대기열 페이지(`gunpo-sanbon-leak-detection`): LocalBusiness·areaServed "군포시 산본동"(중복 해소)·전화, 경로 "홈 › 군포시 › …". 기존 페이지(`onecareplumb`): 엉터리 주소 빠지고 Organization. 다른 업종(`siheung-jeongwangdong-window-cleaning-0002`): 제목형 업체명의 "…은 어떤 곳인가요?" FAQ 빠짐. 3개 모두 화면 FAQ = FAQPage, BreadcrumbList = 화면 경로 |
+| `/area/gunpo` | 200, H1 1개, 경로 "홈 › 군포시", ItemList 5개 + BreadcrumbList |
+
+- 되돌리기: Vercel에서 `dpl_26sZGXgMipT3h8BqtphNzbZ6vPRi`로 promote(또는 `vercel rollback`). 017은 테이블만 추가라 이전 코드와 함께 동작(필요하면 `supabase/rollback/017_down.sql`)
+- 대표 업체(`site_profile`)는 **사용자가 관리자 설정에서 직접 입력**하기로 함(SQL로 넣지 않음). 입력하면 홈에 업체 소개·연락처·LocalBusiness가 생기고, 업체명이 '원케어배관'이면 랜딩 1,043개가 홈과 같은 업체(`/#business`)로 묶인다
