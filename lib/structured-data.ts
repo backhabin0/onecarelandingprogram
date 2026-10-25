@@ -1,10 +1,29 @@
 import type { LandingPage } from "@/types/landing-page";
 import type { ResolvedFaq } from "@/types/seo";
 import type { ResolvedLandingPageSeo } from "@/lib/seo-resolver";
-import { getAbsoluteUrl } from "@/lib/site";
+import type { SiteProfile } from "@/lib/site-profile";
+import { getAbsoluteUrl, getSiteUrl } from "@/lib/site";
 import type { BreadcrumbItem } from "@/lib/local-seo";
+import { areaName, isSameText, looksLikePostalAddress } from "@/lib/business-info";
 
 const SCHEMA_CONTEXT = "https://schema.org";
+
+/** 구조화 데이터에 쓰는 대표 업체 정보(관리자 설정, lib/site-profile.ts) */
+export type SiteBusiness = Pick<SiteProfile, "businessName" | "description" | "phone" | "kakaoUrl">;
+
+/** 홈·랜딩페이지가 같은 업체를 가리키도록 쓰는 고정 @id */
+export function siteBusinessId(): string {
+  return getAbsoluteUrl("/#business");
+}
+
+export function siteWebsiteId(): string {
+  return getAbsoluteUrl("/#website");
+}
+
+/** 랜딩페이지 업체명이 대표 업체명과 같으면(공백 차이 무시) 같은 업체로 묶는다 */
+function isSiteBusiness(landingPage: LandingPage, site: SiteBusiness | null): site is SiteBusiness & { businessName: string } {
+  return Boolean(site?.businessName) && isSameText(site?.businessName, landingPage.business_name);
+}
 
 /**
  * public 랜딩페이지 1건에 대한 WebPage JSON-LD를 만든다.
@@ -13,7 +32,8 @@ const SCHEMA_CONTEXT = "https://schema.org";
  */
 export function buildWebPageJsonLd(
   landingPage: LandingPage,
-  resolvedSeo: ResolvedLandingPageSeo
+  resolvedSeo: ResolvedLandingPageSeo,
+  site: SiteBusiness | null = null
 ) {
   return {
     "@context": SCHEMA_CONTEXT,
@@ -22,6 +42,8 @@ export function buildWebPageJsonLd(
     url: resolvedSeo.canonical,
     name: resolvedSeo.title,
     description: resolvedSeo.description,
+    inLanguage: "ko-KR",
+    isPartOf: { "@id": siteWebsiteId() },
     dateModified: landingPage.updated_at,
     ...(resolvedSeo.ogImage
       ? {
@@ -31,43 +53,54 @@ export function buildWebPageJsonLd(
           },
         }
       : {}),
-    about: {
-      "@type": "Thing",
-      name: landingPage.business_name,
-    },
+    about: isSiteBusiness(landingPage, site)
+      ? { "@id": siteBusinessId() }
+      : { "@type": "Thing", name: landingPage.business_name },
   };
 }
 
 /**
- * 실제 사용 가능한 데이터만으로 Organization 또는 LocalBusiness JSON-LD를
- * 만든다. 주소가 있으면 LocalBusiness, 없으면 일반 Organization을 사용한다.
+ * 실제 사용 가능한 데이터만으로 LocalBusiness 또는 Organization JSON-LD를 만든다.
+ * - 주소 칸이 실제 주소로 보이거나(lib/business-info.ts) 서비스 지역이 있으면 LocalBusiness,
+ *   둘 다 없으면 일반 Organization. 제목형 문구·slug가 든 주소 칸은 PostalAddress로 내보내지 않는다.
+ * - 업체명이 사이트 대표 업체(관리자 설정)와 같으면 홈과 같은 @id·이름·주소(홈)·소개를 써서
+ *   모든 페이지가 같은 업체 하나를 가리키게 한다. 전화는 페이지 값 → 대표 업체 값 순서.
  * business_category는 임의의 schema.org 하위 타입으로 변환하지 않고
  * knowsAbout(업종 정보)로만 안전하게 표현한다.
  */
 export function buildOrganizationJsonLd(
   landingPage: LandingPage,
-  resolvedSeo: ResolvedLandingPageSeo
+  resolvedSeo: ResolvedLandingPageSeo,
+  site: SiteBusiness | null = null
 ) {
-  const type = landingPage.address?.trim() ? "LocalBusiness" : "Organization";
+  const sameAsSite = isSiteBusiness(landingPage, site);
+  const address = looksLikePostalAddress(landingPage.address, [landingPage.business_name, landingPage.title])
+    ? landingPage.address?.trim()
+    : null;
+  const areaServed = areaServedOf(landingPage, resolvedSeo);
+  const telephone = landingPage.phone?.trim() || (sameAsSite ? site.phone : null);
+  const type = sameAsSite || address || areaServed.areaServed ? "LocalBusiness" : "Organization";
 
   return {
     "@context": SCHEMA_CONTEXT,
     "@type": type,
-    name: landingPage.business_name,
-    url: resolvedSeo.canonical,
-    description: resolvedSeo.description,
-    ...(landingPage.phone?.trim() ? { telephone: landingPage.phone.trim() } : {}),
-    ...(landingPage.address?.trim()
+    ...(sameAsSite ? { "@id": siteBusinessId() } : {}),
+    name: sameAsSite ? site.businessName : landingPage.business_name,
+    url: sameAsSite ? getAbsoluteUrl("/") : resolvedSeo.canonical,
+    description: (sameAsSite ? site.description : null) ?? resolvedSeo.description,
+    ...(telephone ? { telephone } : {}),
+    ...(address
       ? {
           address: {
             "@type": "PostalAddress",
-            streetAddress: landingPage.address.trim(),
+            streetAddress: address,
+            addressCountry: "KR",
           },
         }
       : {}),
     ...(landingPage.main_image_url ? { image: landingPage.main_image_url } : {}),
     ...(landingPage.logo_url ? { logo: landingPage.logo_url } : {}),
-    ...areaServedOf(landingPage, resolvedSeo),
+    ...areaServed,
     ...(resolvedSeo.businessCategory
       ? { knowsAbout: [resolvedSeo.businessCategory] }
       : {}),
@@ -77,15 +110,48 @@ export function buildOrganizationJsonLd(
 /**
  * 서비스 지역(areaServed). 관리자가 SEO 설정에 "서비스 지역"을 직접 넣었으면 그 글자를,
  * 아니면 대기열에서 공개된 페이지의 시/군·지역으로 AdministrativeArea를 만든다(7단계).
+ * 지역 칸에 시/군이 이미 들어 있으면 두 번 쓰지 않는다("군포시 군포시 산본동" 방지).
  * 둘 다 없으면 생략한다(추측해서 채우지 않음).
  */
 function areaServedOf(landingPage: LandingPage, resolvedSeo: ResolvedLandingPageSeo) {
   if (resolvedSeo.serviceArea) return { areaServed: resolvedSeo.serviceArea };
-  const name = [landingPage.city, landingPage.region]
-    .map((v) => v?.trim())
-    .filter(Boolean)
-    .join(" ");
+  const name = areaName(landingPage.city, landingPage.region);
   return name ? { areaServed: { "@type": "AdministrativeArea", name } } : {};
+}
+
+/**
+ * 공개 홈(/)의 업체 JSON-LD. 대표 업체명이 없으면 만들지 않는다(null).
+ * 서비스 지역은 지역 모음 페이지가 있는 시/군 목록(실제로 공개된 페이지 기준).
+ * 주소 칸은 대표 업체 설정에 없으므로 넣지 않는다.
+ */
+export function buildSiteBusinessJsonLd(site: SiteBusiness, cities: readonly string[]) {
+  if (!site.businessName) return null;
+  return {
+    "@context": SCHEMA_CONTEXT,
+    "@type": "LocalBusiness",
+    "@id": siteBusinessId(),
+    name: site.businessName,
+    url: getAbsoluteUrl("/"),
+    ...(site.description ? { description: site.description } : {}),
+    ...(site.phone ? { telephone: site.phone } : {}),
+    ...(cities.length > 0
+      ? { areaServed: cities.map((name) => ({ "@type": "AdministrativeArea", name })) }
+      : {}),
+  };
+}
+
+/** 공개 홈(/)의 WebSite JSON-LD. 이름은 대표 업체명, 없으면 도메인 */
+export function buildWebSiteJsonLd(site: SiteBusiness | null, description: string) {
+  return {
+    "@context": SCHEMA_CONTEXT,
+    "@type": "WebSite",
+    "@id": siteWebsiteId(),
+    url: getAbsoluteUrl("/"),
+    name: site?.businessName ?? new URL(getSiteUrl()).host,
+    description,
+    inLanguage: "ko-KR",
+    ...(site?.businessName ? { publisher: { "@id": siteBusinessId() } } : {}),
+  };
 }
 
 /** 화면에 보이는 경로(홈 > 시/군 > 페이지)와 같은 BreadcrumbList */

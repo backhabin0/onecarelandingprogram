@@ -7,6 +7,7 @@ import {
   updateSiteVerificationSettings,
 } from "@/lib/site-verification";
 import { updateSimilarityThresholds } from "@/lib/bulk-publish-settings";
+import { sanitizeSiteProfileInput, updateSiteProfile, type SiteProfileInput } from "@/lib/site-profile";
 import { after } from "next/server";
 import { runAutoPublishNow, updateAutoPublishSettings } from "@/lib/auto-publish";
 import { submitPendingToIndexNow } from "@/lib/indexnow";
@@ -53,6 +54,29 @@ export async function updateSiteVerificationAction(
     revalidatePath("/admin/settings");
   }
 
+  return result;
+}
+
+/**
+ * 사이트 대표 업체 정보 저장(017). 공개 홈(/)·/llms.txt·sitemap은 모두 매 요청 조회라
+ * 다음 요청부터 바로 반영된다. 랜딩페이지 구조화 데이터도 같은 값을 쓴다.
+ */
+export async function updateSiteProfileAction(input: SiteProfileInput): Promise<{ success: boolean; error?: string }> {
+  await requireUser();
+
+  const sanitized = sanitizeSiteProfileInput({
+    businessName: String(input?.businessName ?? ""),
+    description: String(input?.description ?? ""),
+    phone: String(input?.phone ?? ""),
+    kakaoUrl: String(input?.kakaoUrl ?? ""),
+  });
+  if (!sanitized.ok) return { success: false, error: sanitized.error };
+
+  const result = await updateSiteProfile(sanitized.value);
+  if (result.success) {
+    revalidatePath("/");
+    revalidatePath("/admin/settings");
+  }
   return result;
 }
 

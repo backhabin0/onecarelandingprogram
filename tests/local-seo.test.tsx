@@ -92,7 +92,13 @@ describe("머리말(H1·자동 SEO 제목)", () => {
   });
 
   it("자동 SEO 제목은 '지역 키워드'가 맨 앞", () => {
-    expect(buildSeoTitle(page({ title: "원케어 헬스" }))).toBe("산본동 헬스장 원케어 헬스 | 원케어 헬스");
+    expect(buildSeoTitle(page({ title: "원케어 헬스 산본점" }))).toBe("산본동 헬스장 원케어 헬스 산본점 | 원케어 헬스");
+  });
+
+  it("업체명 칸이 제목과 같으면(기존 페이지) 'X | X'로 중복하지 않는다", () => {
+    expect(buildSeoTitle(page({ title: "원케어 헬스" }))).toBe("산본동 헬스장 원케어 헬스");
+    const legacy = page({ region: null, keyword: null, title: "시흥 은행동 하수구 막힘 해결", business_name: "시흥 은행동 하수구 막힘 해결" });
+    expect(buildSeoTitle(legacy)).toBe("시흥 은행동 하수구 막힘 해결");
   });
 });
 
@@ -267,7 +273,7 @@ describe("지역 모음 페이지", () => {
     created_at: "2026-10-01T00:00:00.000Z",
   });
 
-  it("/area/gunpo: H1 1개, 키워드별 링크, ItemList JSON-LD, 메타데이터. 경로·BreadcrumbList·홈 링크 없음", async () => {
+  it("/area/gunpo: H1 1개, 키워드별 링크, ItemList·BreadcrumbList(홈 › 시/군) JSON-LD, 메타데이터", async () => {
     setFakeSupabase(hubDb([hubRow("sanbon-gym", "산본동", "헬스장"), hubRow("suri-gym", "수리동", "헬스장"), hubRow("hidden", "당동", "헬스장", "private")]));
     const html = renderToStaticMarkup(await AreaHubPage({ params: Promise.resolve({ citySlug: "gunpo" }) }));
     expect(html.match(/<h1[\s>]/g)).toHaveLength(1);
@@ -275,12 +281,15 @@ describe("지역 모음 페이지", () => {
     expect(html).toContain('href="/suri-gym"');
     expect(html).not.toContain("/hidden");
     const blocks = jsonLdBlocks(html);
-    // "홈"을 빼면 경로가 "시/군" 1개뿐이라 경로 표시·BreadcrumbList(2개 이상 필요)를 넣지 않는다.
-    expect(blocks.map((b) => b["@type"])).toEqual(["ItemList"]);
-    expect(html).not.toMatch(/aria-label="현재 위치"/);
-    expect(html).not.toContain('href="/"');
-    expect(html).not.toContain(">홈<");
+    // 공개 홈이 생겨 경로는 "홈 › 시/군"(화면과 BreadcrumbList가 같은 내용)
+    expect(blocks.map((b) => b["@type"])).toEqual(["ItemList", "BreadcrumbList"]);
+    expect(html).toMatch(/aria-label="현재 위치"/);
+    expect(html).toContain('href="/"');
     expect((blocks[0].itemListElement as unknown[]).length).toBe(2);
+    expect((blocks[1] as { itemListElement: unknown[] }).itemListElement).toEqual([
+      { "@type": "ListItem", position: 1, name: "홈", item: "https://example.test/" },
+      { "@type": "ListItem", position: 2, name: "군포시", item: "https://example.test/area/gunpo" },
+    ]);
 
     const meta = await hubMetadata({ params: Promise.resolve({ citySlug: "gunpo" }) });
     expect(meta.title).toBe("군포시 헬스장 지역 안내 | 원케어 헬스");
@@ -351,29 +360,32 @@ describe("공개 페이지 렌더링(템플릿 A/B)", () => {
     expect(faq.mainEntity.map((q) => q.name)).toEqual(faqs.map((f) => f.question));
     const crumbs = blocks[3] as { itemListElement: { position: number; name: string; item: string }[] };
     expect(crumbs.itemListElement).toEqual([
-      { "@type": "ListItem", position: 1, name: "군포시", item: "https://example.test/area/gunpo" },
-      { "@type": "ListItem", position: 2, name: "산본동 헬스장 원케어 헬스 산본점", item: "https://example.test/sanbon-gym" },
+      { "@type": "ListItem", position: 1, name: "홈", item: "https://example.test/" },
+      { "@type": "ListItem", position: 2, name: "군포시", item: "https://example.test/area/gunpo" },
+      { "@type": "ListItem", position: 3, name: "산본동 헬스장 원케어 헬스 산본점", item: "https://example.test/sanbon-gym" },
     ]);
   });
 
-  it.each(["template-a", "template-b"])("%s: 경로는 '시/군 › 페이지'로 시작하고 '홈'·사이트 루트 링크가 없다", (template) => {
+  it.each(["template-a", "template-b"])("%s: 경로는 '홈 › 시/군 › 페이지'(화면 = BreadcrumbList)", (template) => {
     const html = render({ template });
     const nav = html.match(/<nav aria-label="현재 위치"[^>]*>(.*?)<\/nav>/)?.[1] ?? "";
     const crumbs = Array.from(nav.matchAll(/<li[^>]*>(?:<a[^>]*>|<span[^>]*>)([^<]*)</g)).map((m) => m[1]);
-    expect(crumbs).toEqual(["군포시", "산본동 헬스장 원케어 헬스 산본점"]);
+    expect(crumbs).toEqual(["홈", "군포시", "산본동 헬스장 원케어 헬스 산본점"]);
+    expect(nav).toContain('href="/"');
     expect(nav).toContain('href="/area/gunpo"');
-    expect(html).not.toContain('href="/"');
-    expect(html).not.toContain(">홈<");
     const crumbLd = jsonLdBlocks(html).find((b) => b["@type"] === "BreadcrumbList") as { itemListElement: { name: string; item: string }[] };
-    expect(crumbLd.itemListElement.map((i) => i.name)).toEqual(["군포시", "산본동 헬스장 원케어 헬스 산본점"]);
-    expect(crumbLd.itemListElement.every((i) => i.item !== "https://example.test/")).toBe(true);
+    expect(crumbLd.itemListElement.map((i) => i.name)).toEqual(crumbs);
+    expect(crumbLd.itemListElement[0].item).toBe("https://example.test/");
   });
 
-  it.each(["template-a", "template-b"])("%s: 시/군이 없으면 경로 표시·BreadcrumbList를 생략한다(항목 1개)", (template) => {
+  it.each(["template-a", "template-b"])("%s: 시/군이 없으면 경로는 '홈 › 페이지'(2개)", (template) => {
     const html = render({ template, city: null, city_slug: null });
-    expect(html).not.toMatch(/aria-label="현재 위치"/);
-    expect(jsonLdBlocks(html).map((b) => b["@type"])).toEqual(["WebPage", "LocalBusiness", "FAQPage"]);
-    expect(buildPageBreadcrumbs(page({ city: null, city_slug: null }), "제목")).toEqual([{ name: "제목", path: "/sanbon-gym" }]);
+    expect(html).toMatch(/aria-label="현재 위치"/);
+    expect(jsonLdBlocks(html).map((b) => b["@type"])).toEqual(["WebPage", "LocalBusiness", "FAQPage", "BreadcrumbList"]);
+    expect(buildPageBreadcrumbs(page({ city: null, city_slug: null }), "제목")).toEqual([
+      { name: "홈", path: "/" },
+      { name: "제목", path: "/sanbon-gym" },
+    ]);
   });
 
   it("미리보기 모드는 JSON-LD·내부 링크를 출력하지 않는다", () => {

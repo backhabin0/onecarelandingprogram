@@ -121,7 +121,8 @@ export type ValidationIssueCode =
   | "contains_phone"
   | "contains_price"
   | "keyword_overuse"
-  | "thin_page";
+  | "thin_page"
+  | "faq_not_question";
 
 export interface ValidationIssue {
   code: ValidationIssueCode;

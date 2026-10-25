@@ -67,7 +67,7 @@ describe("sitemap.xml 항목의 lastmod", () => {
       })
     );
 
-    const entries = await sitemap();
+    const entries = (await sitemap()).filter((e) => e.url !== "https://example.test/");
     const lastmod = Object.fromEntries(
       entries.map((e) => [e.url.replace("https://example.test/", ""), (e.lastModified as Date).toISOString()])
     );

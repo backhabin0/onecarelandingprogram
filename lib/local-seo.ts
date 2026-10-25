@@ -234,17 +234,22 @@ export interface BreadcrumbItem {
   path: string;
 }
 
+export const HOME_BREADCRUMB: BreadcrumbItem = { name: "홈", path: "/" };
+
 /**
- * 시/군 모음 › 현재 페이지. "홈"은 넣지 않는다 — 사이트 루트(/)가 관리자 로그인으로
- * 넘어가는 주소라 경로·구조화 데이터에 들어가면 검색엔진에 좋지 않다.
- * 시/군이 없으면 항목이 1개뿐이라 경로 표시와 BreadcrumbList를 모두 생략한다
- * (Breadcrumbs·buildBreadcrumbJsonLd가 2개 미만이면 출력하지 않음 — Google은 2개 이상을 요구).
+ * 홈 › 시/군 모음 › 현재 페이지. 사이트 루트(/)가 공개 홈이 되어(SEO·GEO 작업) "홈"을 다시 넣는다.
+ * 시/군이 없으면 "홈 › 현재 페이지"(2개 — Google BreadcrumbList 최소 개수).
  */
 export function buildPageBreadcrumbs(page: LocalPageInfo, headline: string): BreadcrumbItem[] {
-  const items: BreadcrumbItem[] = [];
+  const items: BreadcrumbItem[] = [HOME_BREADCRUMB];
   const citySlug = clean(page.city_slug);
   const city = clean(page.city);
   if (citySlug && city) items.push({ name: city, path: areaHubPath(citySlug) });
   items.push({ name: headline, path: `/${page.slug}` });
   return items;
+}
+
+/** 지역 모음 페이지 경로: 홈 › 시/군 */
+export function buildHubBreadcrumbs(hub: Pick<AreaHub, "city" | "citySlug">): BreadcrumbItem[] {
+  return [HOME_BREADCRUMB, { name: hub.city, path: areaHubPath(hub.citySlug) }];
 }

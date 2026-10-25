@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-23 (8-5 pg_cron 켜기·매일 작업 등록 완료, 자동 공개는 꺼짐 유지)
+마지막 업데이트: 2026-10-25 (feature/seo-geo: 공개 홈·llms.txt·구조화 데이터 정리, 운영 미배포)
 
 ## 배경
 
@@ -669,3 +669,55 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 1. 네이버 서치어드바이저 사이트 등록·소유 확인, sitemap(`https://onecarepage.co.kr/sitemap.xml`) 제출·수집 요청(🙋) — 기존 1,047개는 IndexNow로 보내지 않기로 함
 2. 손님 실제 지역·키워드로 첫 묶음 → 대기열 → '지금 1회 실행'으로 시험 공개(E) → 자동 공개 켜기 결정 → F 사용 설명서
 3. (선택) 남은 npm audit 중 메이저 변경 없는 것(`npm audit fix`) 정리
+
+## SEO·AEO·GEO 다시 하기 — `feature/seo-geo` (2026-10-25, 운영 DB 읽기만·배포 안 함)
+
+`feature/bulk-publish`(5ea2e19) 위에서 새 브랜치로 작업. 운영 DB는 SELECT만 실행했다(`db query --linked`, 실행할 때마다 `cli_login_postgres` 갱신은 이전과 같음).
+
+### 운영 확인으로 알게 된 것(2026-10-25)
+
+- **10-23 21:38 KST에 대기열 10개가 '지금 1회 실행'(manual)으로 공개됨**: 모두 200 응답, sitemap 포함, IndexNow 200 성공 1회(10개). 위 8-5의 "시험 공개는 하지 않음"과 다름
+- 기존 1,047개 페이지는 `business_name`·`address` 칸에 제목형 문구가 들어 있음(업체명 1,023가지, 주소 칸에 slug 문자열이나 문장). 주소로 보이는 값은 1,011개 중 2개
+- 사이트에 원케어배관 말고도 다른 업체 페이지가 섞여 있음(유리창청소 010-8226-0126, 제트스키 010-3267-4506 등) → 홈에 쓸 "대표 업체"를 DB에서 추측할 수 없음
+- 대기열 공개 10개 페이지 FAQ 30개 중 8개가 물음표 없는 평서문(예: "관리사무소에 설명할 자료가 필요해요"). 공개 페이지 수동 FAQ 전체로는 42개 중 14개. 화면 FAQ와 FAQPage JSON-LD는 일치함
+
+### 결정(사용자, 2026-10-25)
+
+- 홈·llms.txt 업체 정보: **관리자 설정에 '사이트 대표 업체' 칸 신설**(migration 017). 비어 있으면 업체 소개·연락처 없이 서비스·지역 링크만
+- 기존 페이지 제목형 업체명·주소: **주소처럼 보일 때만 사용**(DB는 그대로, 구조화 데이터·자동 FAQ에서만 거름)
+
+### 바뀐 것
+
+| 항목 | 내용 |
+| --- | --- |
+| migration 017 `site_profile` | 단일 행(`id='default'`), 업체명 100·소개 320·전화 30·카카오 500자. anon 읽기만, authenticated 수정만(추가·삭제 정책 없음). 되돌리기 `supabase/rollback/017_down.sql` |
+| 관리자 설정 | "사이트 대표 업체" 카드(업체명·한 줄 소개·대표 전화·카카오 URL). `updateSiteProfileAction` |
+| 공개 홈 `/` | /admin 이동 대신 공개 홈: 대표 업체 소개·전화·카카오(설정한 값만), 서비스(키워드)별 링크(키워드당 최대 12개 + 시/군 모음 링크), 지역(시/군 모음)별 링크. JSON-LD WebSite + LocalBusiness(`/#business`, areaServed=허브 시/군). 템플릿 A 톤. 관리자 링크 없음 |
+| robots | `disallow: /admin, /login, /api/`(예전 `/admin/`는 `/admin` 자체를 못 막았음), `allow: /, /area/, /llms.txt`, sitemap. 쓰이지 않던 루트 `robots.txt`(도메인 틀림) 삭제 |
+| sitemap | 첫 항목에 홈. lastmod = 홈에 보이는 페이지·대표 업체 설정 중 최신(기존 페이지 수정은 홈 lastmod에 영향 없음, 보이는 것이 없으면 생략) |
+| `/llms.txt` | 동적 생성(llmstxt.org 형식): 업체명(없으면 도메인)·한 줄 소개·서비스별 페이지·시/군 허브·문의 방법(설정 값만 + 상담 신청 양식)·홈/sitemap 주소 |
+| 경로(Breadcrumb) | 홈이 공개되어 "홈 › 시/군 › 페이지"로 다시 넣음. 시/군 없으면 "홈 › 페이지". 지역 모음 페이지에도 "홈 › 시/군" 표시 + BreadcrumbList |
+| 랜딩 구조화 데이터 | areaServed "군포시 군포시 산본동" 중복 수정. 주소 칸이 주소처럼 보일 때만 PostalAddress(`lib/business-info.ts`). 주소·서비스 지역이 없으면 Organization. 업체명이 대표 업체와 같으면 홈과 같은 `@id`·이름·url(홈)·소개, 전화는 페이지 값 → 대표 업체 값. WebPage에 `inLanguage`·`isPartOf`(WebSite) |
+| 자동 SEO·FAQ | 업체명=제목이면 title "X \| X" 중복 제거. meta description에서 해시태그·줄바꿈 제거(화면 본문은 그대로). 자동 FAQ: 업체명이 이름으로 보일 때만 "OO은/는 어떤 곳인가요?"(조사 자동), 주소처럼 보일 때만 위치 FAQ |
+| AEO | 대량 생성 프롬프트 규칙 7 "FAQ 질문은 손님 말투의 실제 질문 한 문장, 물음표로 끝냄"(글자 수 규칙은 8번으로). 대량 등록 검사에 경고 `faq_not_question`(저장은 막지 않음) |
+| `<html lang>` | `en` → `ko` |
+
+### 검증
+
+- `npm test` 506개 ✅(기존 458 + 신규 48: `tests/seo-geo.test.tsx` 39, `tests/site-profile.db.test.ts` 9). 기존 테스트 중 "홈 없음"·sitemap 개수·"X \| 업체명"을 기대하던 것은 새 동작에 맞게 고침
+- 일부러 망가뜨려 확인(확인 후 원복): robots `/admin/` → 1개 실패, areaServed 중복 제거 빼기 → 2개, 홈 lastmod에 모든 페이지 → 2개, 017 anon 읽기 정책 제거 → 2개, 주소 판별 제거 → 1개, 대표 업체 묶기 제거 → 2개
+- `npx tsc --noEmit` ✅ / `npx eslint` ✅ / `npx next build` ✅(`/llms.txt` 동적, 빌드 로그 "Dynamic server usage"는 기존과 같은 안내)
+- 실데이터 화면 확인은 못 함(로컬 `.env.local` 없음) → PR 미리보기 배포에서 확인
+
+### 배포할 때(사용자 승인 후)
+
+1. 운영 DB에 017 적용(백업 후, 이전처럼 `begin;`/`commit;` 한 트랜잭션) → 적용 전에 배포해도 홈·llms.txt는 업체 정보 없이 동작하고 관리자 저장만 실패
+2. 배포 → 관리자 설정 "사이트 대표 업체"에 실제 값 입력(업체명을 랜딩페이지 업체명과 똑같이 쓰면 그 페이지들이 같은 업체로 묶임 — 지금은 대기열 10개 "원케어배관")
+3. 확인: `/` 200·H1·JSON-LD, `/llms.txt`, `/robots.txt`, `/sitemap.xml` 첫 항목 홈, 랜딩·허브 경로 "홈 › …"
+4. 서치어드바이저·Search Console에 홈 수집 요청(선택)
+
+### 남은 것
+
+- 백업 파일(version 3)에 `site_profile`은 아직 들어 있지 않음(4칸이라 복구 후 다시 입력하면 됨) — 필요하면 version 4로
+- 기존 1,047개의 업체명 칸은 대부분 제목형 문구라 구조화 데이터 `name`도 그 문구 그대로 나감 — 관리자 화면에서 업체명을 실제 상호로 고치면 해결(코드로 추측해서 바꾸지 않음)
+- 이미 공개된 FAQ 평서문 8개(대기열 10개 페이지)는 그대로 — 고치려면 관리자 화면 FAQ에서 질문 문장으로 수정

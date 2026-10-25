@@ -210,7 +210,13 @@ function buildPromptText(
   );
   lines.push("5. 전화·카카오 URL·주소는 해당 칸에만 두고, 제목·문구·FAQ에는 넣지 마세요.");
   lines.push("6. FAQ 질문/답변 1~3을 모두 채우세요. 답변은 규칙 4를 지키는 일반적인 안내로 쓰고, 자세한 내용은 상담으로 안내해도 됩니다.");
-  lines.push("7. 위의 글자 수 제한을 반드시 지키세요.");
+  lines.push(
+    "7. FAQ 질문은 손님이 전화나 카카오톡으로 실제로 물어볼 말투의 질문 한 문장으로 쓰고, 물음표(?)로 끝내세요. 예: \"처음 문의할 때 무엇을 알려 드리면 되나요?\""
+  );
+  lines.push(
+    "   업체 소개형 질문(\"OO은 어떤 곳인가요?\")이나 \"자료가 필요해요\" 같은 평서문은 쓰지 말고, 한 행 안에서 같은 뜻의 질문을 반복하지 마세요."
+  );
+  lines.push("8. 위의 글자 수 제한을 반드시 지키세요.");
 
   lines.push("", `[입력 표] (${combinations.length}행)`);
   lines.push(BULK_UPLOAD_COLUMNS.map((c) => c.header).join("\t"));

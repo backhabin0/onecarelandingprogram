@@ -6,6 +6,7 @@ import {
   buildFaqPageJsonLd,
   buildOrganizationJsonLd,
   buildWebPageJsonLd,
+  type SiteBusiness,
 } from "@/lib/structured-data";
 import {
   buildHeadline,
@@ -26,6 +27,8 @@ interface LandingPageRendererProps {
   resolvedSeo?: ResolvedLandingPageSeo;
   /** 하단 내부 링크(7단계). 공개 페이지에서만 넘긴다 — 미리보기에서는 생략 */
   related?: RelatedLinks | null;
+  /** 사이트 대표 업체(관리자 설정). 업체명이 같으면 구조화 데이터를 홈과 같은 업체로 묶는다 */
+  siteBusiness?: SiteBusiness | null;
   /**
    * "public"(기본값): 실제 고객용 페이지. JSON-LD, page_view/전화/카카오 Analytics,
    * 실제 상담 제출이 모두 동작한다.
@@ -40,6 +43,7 @@ export default function LandingPageRenderer({
   faqs,
   resolvedSeo,
   related = null,
+  siteBusiness = null,
   mode = "public",
 }: LandingPageRendererProps) {
   const preview = mode === "preview";
@@ -50,10 +54,10 @@ export default function LandingPageRenderer({
   const breadcrumbs = buildPageBreadcrumbs(landingPage, headline);
 
   const webPageJsonLd = resolvedSeo
-    ? buildWebPageJsonLd(landingPage, resolvedSeo)
+    ? buildWebPageJsonLd(landingPage, resolvedSeo, siteBusiness)
     : null;
   const organizationJsonLd = resolvedSeo
-    ? buildOrganizationJsonLd(landingPage, resolvedSeo)
+    ? buildOrganizationJsonLd(landingPage, resolvedSeo, siteBusiness)
     : null;
   const faqPageJsonLd = buildFaqPageJsonLd(faqs);
   const breadcrumbJsonLd = buildBreadcrumbJsonLd(breadcrumbs);

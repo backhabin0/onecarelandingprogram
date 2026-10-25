@@ -3,6 +3,8 @@ import { getPublicLandingPagesForSitemap } from "@/lib/landing-pages";
 import { getAbsoluteUrl } from "@/lib/site";
 import { getSitemapLastModified } from "@/lib/sitemap-lastmod";
 import { areaHubPath, buildAreaHubs } from "@/lib/local-seo";
+import { buildHomeContent } from "@/lib/site-home";
+import { getSiteProfile } from "@/lib/site-profile";
 
 /**
  * status = 'public'이면서 seo_noindex가 true가 아닌 landing_pages만 포함한다
@@ -35,5 +37,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  return [...pages, ...hubs];
+  // 공개 홈(/): lastmod는 홈에 실제로 보이는 내용(서비스·지역 링크, 대표 업체 설정)의 최근 변경 시각.
+  // 보이는 것이 하나도 없으면 lastmod를 생략한다(지어낸 날짜를 넣지 않음).
+  const home = buildHomeContent(landingPages, await getSiteProfile());
+  const homeEntry: MetadataRoute.Sitemap[number] = {
+    url: getAbsoluteUrl("/"),
+    ...(home.lastModified ? { lastModified: home.lastModified } : {}),
+    changeFrequency: "daily",
+    priority: 1,
+  };
+
+  return [homeEntry, ...pages, ...hubs];
 }
