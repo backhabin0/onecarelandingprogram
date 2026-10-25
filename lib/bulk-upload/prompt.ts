@@ -1,4 +1,5 @@
 import { FAQ_MAX_LENGTH, LANDING_PAGE_MAX_LENGTH, SEO_MAX_LENGTH, SLUG_PATTERN } from "@/lib/landing-page-validation";
+import { BLOCKED_SLUG_PREFIX_MESSAGE, hasBlockedSlugPrefix } from "@/lib/slug";
 import { BULK_UPLOAD_COLUMNS, CUSTOMER_ONLY_FIELDS, type BulkUploadField } from "./columns";
 import { MAX_UPLOAD_ROWS } from "./parse";
 
@@ -210,7 +211,13 @@ function buildPromptText(
   );
   lines.push("5. 전화·카카오 URL·주소는 해당 칸에만 두고, 제목·문구·FAQ에는 넣지 마세요.");
   lines.push("6. FAQ 질문/답변 1~3을 모두 채우세요. 답변은 규칙 4를 지키는 일반적인 안내로 쓰고, 자세한 내용은 상담으로 안내해도 됩니다.");
-  lines.push("7. 위의 글자 수 제한을 반드시 지키세요.");
+  lines.push(
+    "7. FAQ 질문은 손님이 전화나 카카오톡으로 실제로 물어볼 말투의 질문 한 문장으로 쓰고, 물음표(?)로 끝내세요. 예: \"처음 문의할 때 무엇을 알려 드리면 되나요?\""
+  );
+  lines.push(
+    "   업체 소개형 질문(\"OO은 어떤 곳인가요?\")이나 \"자료가 필요해요\" 같은 평서문은 쓰지 말고, 한 행 안에서 같은 뜻의 질문을 반복하지 마세요."
+  );
+  lines.push("8. 위의 글자 수 제한을 반드시 지키세요.");
 
   lines.push("", `[입력 표] (${combinations.length}행)`);
   lines.push(BULK_UPLOAD_COLUMNS.map((c) => c.header).join("\t"));
@@ -242,6 +249,15 @@ export function buildBulkPrompts(input: {
   if (input.regions.length === 0) errors.push("지역을 한 개 이상 입력해주세요.");
   if (input.keywords.length === 0) errors.push("키워드를 한 개 이상 입력해주세요.");
   if (!input.business.businessName.trim()) errors.push("업체명을 입력해주세요.");
+  // 만들어질 URL(지역slug-키워드slug)이 admin·login·api로 시작하면 등록 검사에서 막히므로 미리 알린다.
+  const blockedRegions = Array.from(
+    new Set(combinations.filter((c) => hasBlockedSlugPrefix(`${c.region.slug}-${c.keyword.slug}`)).map((c) => c.region))
+  );
+  if (blockedRegions.length > 0) {
+    errors.push(
+      `${blockedRegions.map((r) => `${r.name}(${r.slug})`).join(", ")}: ${BLOCKED_SLUG_PREFIX_MESSAGE} 지역 slug를 바꿔주세요.`
+    );
+  }
   if (combinations.length > MAX_UPLOAD_ROWS) {
     errors.push(
       `조합이 ${combinations.length.toLocaleString()}개입니다. 한 번에 올릴 수 있는 ${MAX_UPLOAD_ROWS.toLocaleString()}개 이하로 줄여주세요.`

@@ -3,6 +3,8 @@ import PageHeader from "@/components/admin/PageHeader";
 import Card from "@/components/admin/Card";
 import SiteVerificationSettingsPanel from "@/components/admin/SiteVerificationSettingsPanel";
 import SimilaritySettingsPanel from "@/components/admin/SimilaritySettingsPanel";
+import SiteProfileSettingsPanel from "@/components/admin/SiteProfileSettingsPanel";
+import { getSiteProfile, SITE_PROFILE_MAX_LENGTH } from "@/lib/site-profile";
 import { getSiteVerificationSettings } from "@/lib/site-verification";
 import { getSimilarityThresholds } from "@/lib/bulk-publish-settings";
 import AutoPublishSettingsPanel from "@/components/admin/AutoPublishSettingsPanel";
@@ -20,7 +22,8 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminSettingsPage() {
   const supabase = await getSupabaseServerClient();
-  const [siteVerification, similarity, autoPublish, runs, indexNow] = await Promise.all([
+  const [siteProfile, siteVerification, similarity, autoPublish, runs, indexNow] = await Promise.all([
+    getSiteProfile(),
     getSiteVerificationSettings(),
     getSimilarityThresholds(),
     getAutoPublishSettings(),
@@ -34,6 +37,8 @@ export default async function AdminSettingsPage() {
         title="설정"
         description="관리자 계정 및 시스템 설정 화면입니다. (추후 단계에서 구현)"
       />
+
+      <SiteProfileSettingsPanel initialProfile={siteProfile} maxLength={SITE_PROFILE_MAX_LENGTH} />
 
       <SiteVerificationSettingsPanel initialSettings={siteVerification} />
 

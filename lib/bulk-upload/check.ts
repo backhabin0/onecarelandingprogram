@@ -258,6 +258,25 @@ export function countKeyword(text: string, keyword: string): number {
 }
 
 /**
+ * AEO: FAQ 질문이 손님이 실제로 묻는 질문 문장인지(물음표로 끝나는지) 경고한다(저장은 막지 않음).
+ * 검색·AI 답변 엔진은 질문-답 쌍을 그대로 인용하므로 "자료가 필요해요" 같은 평서문은 질문으로 읽히지 않는다.
+ */
+export function collectFaqQuestionWarnings(values: UploadValues): ValidationIssue[] {
+  const notQuestions = FAQ_INDEXES.filter((k) => {
+    const question = v(values, `faqQuestion${k}`);
+    return question !== "" && !/[?？]$/.test(question);
+  });
+  if (notQuestions.length === 0) return [];
+  return [
+    {
+      code: "faq_not_question",
+      fields: notQuestions.map((k) => `faqQuestion${k}`),
+      message: `${notQuestions.map((k) => `FAQ 질문${k}`).join(", ")}이(가) 물음표(?)로 끝나지 않습니다. 손님이 실제로 묻는 말투의 질문 문장으로 써 주세요.`,
+    },
+  ];
+}
+
+/**
  * 검색엔진 스팸으로 보일 수 있는 상태를 경고한다(저장은 막지 않음).
  * - 키워드 과다 반복: 대표 문구+소개 문구에 같은 키워드가 KEYWORD_REPEAT_LIMIT회 초과
  * - 얇은 페이지: 소개 문구가 THIN_DESCRIPTION_MIN_LENGTH자 미만이고 대표 사진·현장 사례가 모두 없음
@@ -371,6 +390,7 @@ export function checkBulkUploadRows(
     const faqs = collectFaqs(values, errors);
     warnings.push(...collectFactWarnings(values));
     warnings.push(...collectSeoQualityWarnings(values));
+    warnings.push(...collectFaqQuestionWarnings(values));
 
     const region = v(values, "region");
     const keyword = v(values, "keyword");

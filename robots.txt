@@ -1,7 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /admin/
-Disallow: /login
-Disallow: /api/
-
-Sitemap: https://onecare.co.kr/sitemap.xml

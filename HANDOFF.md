@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-23 (8-3 운영 DB migration 013~016 적용 완료, 코드 배포 전)
+마지막 업데이트: 2026-10-25 (feature/seo-geo: 공개 홈·llms.txt·구조화 데이터 정리, 운영 미배포)
 
 ## 배경
 
@@ -572,6 +572,58 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 테스트: 템플릿 A/B 경로 항목이 `["군포시", "페이지"]`, 사이트 루트 링크·"홈" 없음, BreadcrumbList 위치 1·2, 시/군 없는 페이지는 생략, 모음 페이지에 경로·BreadcrumbList 없음. "홈"을 다시 넣으면 5개 실패하는 것 확인
 - `npm test` 457개 ✅ / `npx tsc --noEmit` ✅ / `npx eslint` ✅ / `npx next build` ✅
 
+## 8단계 — 8-4 운영 배포 ✅ (2026-10-23)
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | 배포 전 확인(읽기) | Vercel 프로젝트 `onecarelandingprogram`(`prj_W8mBWxnuFo0HqIx4di37MunPiTsS`, 팀 `habin-s-projects`) ↔ GitHub `backhabin0/onecarelandingprogram` **main 자동 배포**(createDeployments enabled). 배포 전 운영: **`dpl_A76SdL2cfJ4AnQthqyLgKUdxHrcv`**(main `4ddf124`, 2026-09-13) ← 되돌리기용 |
+| 2 | Vercel Production 환경변수 | `INDEXNOW_KEY`(Config, public 키 파일 값과 같음), `CRON_SECRET`(Secret, 영문·숫자 48자, 확인용 sha256 앞 12자 `7de216bd6c0c`) — 값은 어디에도 출력·저장 안 함 |
+| 3 | Supabase Vault | `vault.create_secret(<CRON_SECRET>, 'indexnow_cron_secret', ...)` — DB 안에서 sha256끼리 비교해 같은 값 확인 |
+| 4 | PR·머지 | [PR #1](https://github.com/backhabin0/onecarelandingprogram/pull/1)(커밋 18·파일 126, 미리보기 빌드 성공) → 사용자 "머지해" → merge commit **`3664625`** → 자동 배포 **`dpl_26sZGXgMipT3h8BqtphNzbZ6vPRi`** READY(약 1분) |
+| 5 | 배포 직후 확인(GET) | 아래 표 — 모두 정상 |
+
+| 확인 | 결과 |
+| --- | --- |
+| sitemap.xml | 200, **1,047개**(중복 없음, 모두 lastmod) — 1,000개 잘림 해소. 기존 페이지는 시/군이 비어 있어 허브 0개가 정상 |
+| 랜딩 3개(sitemap 처음·중간·끝) | 모두 200, H1 1개, JSON-LD WebPage·LocalBusiness·FAQPage(모두 유효한 JSON), canonical 정상, index/follow. 시/군이 없어 경로 표시·BreadcrumbList 없음(정상), "홈"·사이트 루트 링크 없음 |
+| `/area/gunpo` | 404(허브 0개라 정상) |
+| `/d8480180f2798f02382139f1dfd53952.txt` | 200, 내용 = 키 |
+| `/api/indexnow`(비밀값 없이) | 401(거절 — 검색엔진에 보내지 않음) |
+| `/admin` / `/login` / `/` | 307 → /login / 200 / 307 → /admin |
+| robots.txt | 200, Sitemap 줄 있음 |
+| Vercel Cron | `/api/indexnow` `10 0 * * *` 등록됨(새 배포 기준) |
+
+- **Vercel Cron(IndexNow)은 내일부터 매일 00:10 UTC(09:10 KST)에 실행됨**. 보내는 대상은 `published_at`이 있는(대기열로 공개된) 페이지뿐이라, 기존 1,047개는 `published_at`이 비어 있어 **보내지 않음** → 대기열로 처음 공개하기 전까지는 보낼 것이 0개
+- pg_cron 켜기·매일 자동 공개 등록은 하지 않음(다음 단계)
+- 되돌리기가 필요하면: Vercel에서 `dpl_A76SdL2cfJ4AnQthqyLgKUdxHrcv`로 promote(또는 `vercel rollback`). DB(013~016)는 추가만 했으므로 이전 코드와 함께 동작
+
+## 8단계 — 8-5 pg_cron + 매일 자동 공개 작업 등록 ✅ (2026-10-23)
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | pg_cron 켜기 | 공식 문서(supabase.com/docs/guides/cron/install) SQL을 한 트랜잭션으로 실행: `create extension if not exists pg_cron with schema pg_catalog;` + `grant usage on schema cron to postgres;` + `grant all privileges on all tables in schema cron to postgres;` → pg_cron **1.6.4**(pg_catalog), cron 스키마 생김, 작업 0개 |
+| 2-1 | `015_cron_schedule.sql` 그대로 실행 | ❌ 오류 → 트랜잭션이라 **전부 취소**(바뀐 것 없음 확인). 원인: 이미 켜진 상태에서 `create extension if not exists pg_cron`을 다시 부르면 Supabase의 pg_cron 권한 이벤트 트리거가 다시 돌아 `revoke all on table cron.job from postgres`에서 `2BP01 dependent privileges exist` |
+| 2-2 | create extension 줄만 빼고 [A] 실행(사용자 승인) | ✅ `cron.job` **1개**: jobid 1, `onecare-daily-auto-publish`, `0 0 * * *`(매일 09:00 KST), `select public.run_auto_publish(false)`, 실행 사용자 `postgres`, active |
+
+- 자동 공개 설정은 **꺼짐 그대로**(하루 50개). 매일 09:00 KST에 작업이 돌지만 `run_auto_publish`가 꺼짐을 보고 `{"status":"disabled"}`만 돌려주고 아무것도 공개·기록하지 않음(실행 이력은 `cron.job_run_details`에 하루 1줄)
+- CLI(`db query --linked`)의 접속 사용자는 `postgres`(superuser 아님)라 작업도 `postgres`로 등록됨
+- `supabase/manual/015_cron_schedule.sql`: create extension 줄을 `with schema pg_catalog`로 바꾸고 "이미 켜져 있으면 이 줄은 빼고 실행" 안내 주석 추가(테스트도 맞춤)
+- 시험 공개는 하지 않음 — 손님 실제 지역·키워드로 첫 묶음을 만들 때 시험(사용자 결정)
+- 되돌리기: 작업 해제는 파일의 [C], pg_cron 끄기는 `drop extension pg_cron;`(작업도 함께 삭제)
+
+### 기존 1,047개 IndexNow 전송 — **보내지 않음**(2026-10-23 사용자 결정: A안)
+
+- 결정: 기존 페이지는 IndexNow로 보내지 않고, 1,047개 전부 들어간 sitemap(lastmod 포함)과 네이버 서치어드바이저 sitemap 제출·수집 요청(사용자)에 맡긴다. IndexNow는 앞으로 대기열로 공개되는 새 페이지만 자동 전송
+- 검토했던 다른 안: B 일회성 스크립트로 나눠 전송(FAQ 권장 용도 밖, 품질 평가 위험), C 기존 행에 published_at을 써서 자동 전송(운영 DB 대량 변경, 비권장)
+
+검토 근거:
+
+- 한도: 요청 1번에 **최대 10,000개**(indexnow.org) → 1,047개는 한 번에 가능. 하루 한도는 공개되지 않음(검색엔진별·사이트별 기준), 많이 보내면 429
+- 현재 코드로는 안 보내짐: 전송 대상은 `published_at`이 있는(대기열로 공개된) 페이지뿐인데 기존 1,047개는 모두 비어 있음. 전송 기록 0
+- 기존 페이지 생성 시기: 2026-09 674개, 2026-10 373개(수정 시각도 같음) — 1~2개월 된 페이지
+- 주의(indexnow.org FAQ): "예전 변경을 소급해서 보내는 용도가 아님"(오래된 내용은 lastmod 있는 sitemap 권장), 바뀌지 않은 주소 재전송 금지, 보낸 주소는 크롤링 할당량을 씀, 색인 보장 없음
+- 엔드포인트는 네이버 서치어드바이저(`lib/indexnow.ts`), 네이버에 사이트 등록·소유 확인이 필요
+
 ## 8-2 이후 운영 적용 체크리스트
 
 표시: 🙋 = 사용자가 직접 해야 함(대시보드 조작·결정·비밀값) / 🤖 = Claude가 할 수 있음(지시 후) / 🤝 = 함께
@@ -587,19 +639,20 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - [x] 🙋 관리자 JSON 백업 다운로드 — `다운로드\onecare-backup-20261023T095140Z.json`(8-3, 1,000행 잘림 없이 전부 들어 있음)
 - [x] 🤖 DB 덤프(SELECT만) — `C:\Users\user\Documents\onecare-backup\2026-10-23_1853\`(8-3)
 - [x] 🤝 migration **013 → 014 → 015 → 016** 하나씩 적용 + 각 단계 확인(8-3, 아래 결과 표)
-- [ ] 🙋 Dashboard > Database > Extensions에서 **pg_cron 켜기** → `supabase/manual/015_cron_schedule.sql` [A] 실행 → `select * from cron.job`으로 `onecare-daily-auto-publish`(`0 0 * * *`) 확인 — 코드 배포 뒤 자동 공개를 켜기 전까지만 하면 됨(지금 켜도 설정이 꺼짐이라 아무것도 공개하지 않음)
-- [ ] 🙋 16자 이상 무작위 **CRON_SECRET** 만들기 → 같은 값을 Vault에 등록(`015_cron_schedule.sql` [B]) — 값은 git·채팅에 남기지 않기
+- [x] 🤖 **pg_cron 켜기**(1.6.4) → [A] 등록 → `cron.job`에 `onecare-daily-auto-publish`(`0 0 * * *`) 1개 확인(8-5)
+- [x] 🤖 **CRON_SECRET**(48자) 만들기 → Vault `indexnow_cron_secret` 등록(8-4, 값은 출력·저장 안 함)
 
 ### C. Vercel 환경변수·배포
-- [ ] 🙋 Vercel(onecarepage.co.kr 프로젝트) 환경변수 추가: `INDEXNOW_KEY=d8480180f2798f02382139f1dfd53952`, `CRON_SECRET=<B에서 만든 값>`, `NEXT_PUBLIC_SITE_URL`이 `https://onecarepage.co.kr`인지 확인
-- [ ] 🤖 `feature/bulk-publish` → `main` PR 준비(변경 요약·적용 순서 포함) → 🙋 **머지·Production 배포 승인**(반드시 B 완료 후)
-- [ ] 🙋 Vercel > Settings > Cron Jobs에 `/api/indexnow`(`10 0 * * *`)가 보이는지 확인
+- [x] 🤖 Vercel Production 환경변수 `INDEXNOW_KEY`·`CRON_SECRET` 추가(8-4). `NEXT_PUBLIC_SITE_URL`은 있음(값은 확인 안 함 — canonical이 `https://onecarepage.co.kr/...`로 나와 정상)
+- [x] 🤖 PR #1 → 🙋 머지 승인 → 자동 배포 `dpl_26sZGXgMipT3h8BqtphNzbZ6vPRi`(8-4)
+- [x] 🤖 Vercel Cron `/api/indexnow`(`10 0 * * *`) 등록 확인(API로, 8-4)
 
 ### D. 배포 직후 확인
-- [ ] 🤖 sitemap.xml URL 수 = 공개+noindex 아닌 페이지 수(현재 1,047) + 지역 모음 페이지 수인지(읽기 전용 GET)
+- [x] 🤖 sitemap.xml 1,047개(허브 0개 — 기존 페이지 시/군 없음, 정상)(8-4)
 - [ ] 🤝 관리자 화면: 대시보드 숫자(1,047), 랜딩 목록 페이지 나눔, AI 대량 생성(양식 다운로드·붙여넣기 검사), 공개 대기열, 설정(유사도 기준·자동 공개·IndexNow 상태)
-- [ ] 🤝 공개 페이지 1개를 골라 H1·경로·구조화 데이터 확인(Google 리치 결과 테스트, 네이버 서치어드바이저 웹 페이지 최적화 검사) — 기존 페이지는 지역·키워드 칸이 없으므로 예전과 같게 보이는 것이 정상
-- [ ] 🙋 `https://onecarepage.co.kr/d8480180f2798f02382139f1dfd53952.txt`가 키 값을 그대로 보여주는지 확인
+- [x] 🤖 랜딩 3개 H1·구조화 데이터·canonical 확인(8-4)
+- [ ] 🙋 (선택) Google 리치 결과 테스트·네이버 서치어드바이저 웹 페이지 최적화 검사 — 기존 페이지는 지역·키워드 칸이 없으므로 예전과 같게 보이는 것이 정상
+- [x] 🤖 IndexNow 키 파일 200·내용 일치(8-4)
 - [ ] 🙋 네이버 서치어드바이저에 사이트가 등록·소유 확인되어 있는지, IndexNow 사용 조건 확인 → 설정 화면 '지금 보내기'로 첫 전송, 결과 기록 확인
 
 ### E. 자동 공개 시작
@@ -613,6 +666,59 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 
 ## 다음 단계
 
-1. 체크리스트 B 남은 것(pg_cron 켜기·CRON_SECRET/Vault — 사용자) → C(Vercel 환경변수, PR·배포 승인)
-2. 그 다음 D~F는 사용자 지시에 따라 한 단계씩
+1. 네이버 서치어드바이저 사이트 등록·소유 확인, sitemap(`https://onecarepage.co.kr/sitemap.xml`) 제출·수집 요청(🙋) — 기존 1,047개는 IndexNow로 보내지 않기로 함
+2. 손님 실제 지역·키워드로 첫 묶음 → 대기열 → '지금 1회 실행'으로 시험 공개(E) → 자동 공개 켜기 결정 → F 사용 설명서
 3. (선택) 남은 npm audit 중 메이저 변경 없는 것(`npm audit fix`) 정리
+
+## SEO·AEO·GEO 다시 하기 — `feature/seo-geo` (2026-10-25, 운영 DB 읽기만·배포 안 함)
+
+`feature/bulk-publish`(5ea2e19) 위에서 새 브랜치로 작업. 운영 DB는 SELECT만 실행했다(`db query --linked`, 실행할 때마다 `cli_login_postgres` 갱신은 이전과 같음).
+
+### 운영 확인으로 알게 된 것(2026-10-25)
+
+- **10-23 21:38 KST에 대기열 10개가 '지금 1회 실행'(manual)으로 공개됨**: 모두 200 응답, sitemap 포함, IndexNow 200 성공 1회(10개). 위 8-5의 "시험 공개는 하지 않음"과 다름
+- 기존 1,047개 페이지는 `business_name`·`address` 칸에 제목형 문구가 들어 있음(업체명 1,023가지, 주소 칸에 slug 문자열이나 문장). 주소로 보이는 값은 1,011개 중 2개
+- 사이트에 원케어배관 말고도 다른 업체 페이지가 섞여 있음(유리창청소 010-8226-0126, 제트스키 010-3267-4506 등) → 홈에 쓸 "대표 업체"를 DB에서 추측할 수 없음
+- 대기열 공개 10개 페이지 FAQ 30개 중 8개가 물음표 없는 평서문(예: "관리사무소에 설명할 자료가 필요해요"). 공개 페이지 수동 FAQ 전체로는 42개 중 14개. 화면 FAQ와 FAQPage JSON-LD는 일치함
+
+### 결정(사용자, 2026-10-25)
+
+- 홈·llms.txt 업체 정보: **관리자 설정에 '사이트 대표 업체' 칸 신설**(migration 017). 비어 있으면 업체 소개·연락처 없이 서비스·지역 링크만
+- 기존 페이지 제목형 업체명·주소: **주소처럼 보일 때만 사용**(DB는 그대로, 구조화 데이터·자동 FAQ에서만 거름)
+
+### 바뀐 것
+
+| 항목 | 내용 |
+| --- | --- |
+| migration 017 `site_profile` | 단일 행(`id='default'`), 업체명 100·소개 320·전화 30·카카오 500자. anon 읽기만, authenticated 수정만(추가·삭제 정책 없음). 되돌리기 `supabase/rollback/017_down.sql` |
+| 관리자 설정 | "사이트 대표 업체" 카드(업체명·한 줄 소개·대표 전화·카카오 URL). `updateSiteProfileAction` |
+| 공개 홈 `/` | /admin 이동 대신 공개 홈: 대표 업체 소개·전화·카카오(설정한 값만), 서비스(키워드)별 링크(키워드당 최대 12개 + 시/군 모음 링크), 지역(시/군 모음)별 링크. JSON-LD WebSite + LocalBusiness(`/#business`, areaServed=허브 시/군). 템플릿 A 톤. 관리자 링크 없음 |
+| robots | `disallow: /admin, /login, /api`(모두 끝 슬래시 없이 — 주소 자체와 하위 경로를 함께 막음. 예전 `/admin/`는 `/admin` 자체를 못 막았음. 앞부분 일치라 `api…`·`admin…`·`login…`으로 시작하는 slug도 막히므로 아래 slug 규칙으로 만들 수 없게 함. Disallow는 `lib/slug.ts`의 `BLOCKED_SLUG_PREFIXES`로 만든다), `allow: /, /area/, /llms.txt`, sitemap. 쓰이지 않던 루트 `robots.txt`(도메인 틀림) 삭제 |
+| sitemap | 첫 항목에 홈. lastmod = 홈에 보이는 페이지·대표 업체 설정 중 최신(기존 페이지 수정은 홈 lastmod에 영향 없음, 보이는 것이 없으면 생략) |
+| `/llms.txt` | 동적 생성(llmstxt.org 형식): 업체명(없으면 도메인)·한 줄 소개·서비스별 페이지·시/군 허브·문의 방법(설정 값만 + 상담 신청 양식)·홈/sitemap 주소 |
+| 경로(Breadcrumb) | 홈이 공개되어 "홈 › 시/군 › 페이지"로 다시 넣음. 시/군 없으면 "홈 › 페이지". 지역 모음 페이지에도 "홈 › 시/군" 표시 + BreadcrumbList |
+| 랜딩 구조화 데이터 | areaServed "군포시 군포시 산본동" 중복 수정. 주소 칸이 주소처럼 보일 때만 PostalAddress(`lib/business-info.ts`). 주소·서비스 지역이 없으면 Organization. 업체명이 대표 업체와 같으면 홈과 같은 `@id`·이름·url(홈)·소개, 전화는 페이지 값 → 대표 업체 값. WebPage에 `inLanguage`·`isPartOf`(WebSite) |
+| 자동 SEO·FAQ | 업체명=제목이면 title "X \| X" 중복 제거. meta description에서 해시태그·줄바꿈 제거(화면 본문은 그대로). 자동 FAQ: 업체명이 이름으로 보일 때만 "OO은/는 어떤 곳인가요?"(조사 자동), 주소처럼 보일 때만 위치 FAQ |
+| AEO | 대량 생성 프롬프트 규칙 7 "FAQ 질문은 손님 말투의 실제 질문 한 문장, 물음표로 끝냄"(글자 수 규칙은 8번으로). 대량 등록 검사에 경고 `faq_not_question`(저장은 막지 않음) |
+| slug 규칙 | `admin`·`login`·`api`로 시작하는 slug(예: `admin-xxx`, `apink-xxx`) 금지 — 공용 `isReservedSlug`에 앞부분 검사 추가. 수동 생성·수정·복제·대량 등록(엑셀·붙여넣기·대기열 수정)·백업 복구가 같은 함수를 쓰고, 프롬프트 만들기는 "지역slug-키워드slug"가 걸리는 지역이 있으면 프롬프트를 만들지 않고 알려 줌. 문구 "admin, login, api로 시작하는 URL은 사용할 수 없습니다(검색엔진 차단 주소와 겹침)."(예약어와 똑같으면 기존 문구). 2026-10-25 운영 DB 확인(읽기만): 랜딩·대기열에 해당 slug 0개 |
+| `<html lang>` | `en` → `ko` |
+
+### 검증
+
+- `npm test` 524개 ✅(기존 458 + `tests/seo-geo.test.tsx` 44, `tests/site-profile.db.test.ts` 9, slug 규칙 케이스는 validation·actions 테스트에도 추가). 기존 테스트 중 "홈 없음"·sitemap 개수·"X \| 업체명"·"admin-gym 허용"을 기대하던 것은 새 동작에 맞게 고침. 2단계 동작 비교 테스트의 예전 코드 사본은 고치지 않고, 비교 입력의 `admin-gym`만 `my-admin-gym`으로 바꿈
+- 일부러 망가뜨려 확인(확인 후 원복): robots `/admin/` → 1개 실패, areaServed 중복 제거 빼기 → 2개, 홈 lastmod에 모든 페이지 → 2개, 017 anon 읽기 정책 제거 → 2개, 주소 판별 제거 → 1개, 대표 업체 묶기 제거 → 2개, slug 앞부분 검사 제거 → 15개
+- `npx tsc --noEmit` ✅ / `npx eslint` ✅ / `npx next build` ✅(`/llms.txt` 동적, 빌드 로그 "Dynamic server usage"는 기존과 같은 안내)
+- 실데이터 화면 확인은 못 함(로컬 `.env.local` 없음) → PR 미리보기 배포에서 확인
+
+### 배포할 때(사용자 승인 후)
+
+1. 운영 DB에 017 적용(백업 후, 이전처럼 `begin;`/`commit;` 한 트랜잭션) → 적용 전에 배포해도 홈·llms.txt는 업체 정보 없이 동작하고 관리자 저장만 실패
+2. 배포 → 관리자 설정 "사이트 대표 업체"에 실제 값 입력(업체명을 랜딩페이지 업체명과 똑같이 쓰면 그 페이지들이 같은 업체로 묶임 — 지금은 대기열 10개 "원케어배관")
+3. 확인: `/` 200·H1·JSON-LD, `/llms.txt`, `/robots.txt`, `/sitemap.xml` 첫 항목 홈, 랜딩·허브 경로 "홈 › …"
+4. 서치어드바이저·Search Console에 홈 수집 요청(선택)
+
+### 남은 것
+
+- 백업 파일(version 3)에 `site_profile`은 아직 들어 있지 않음(4칸이라 복구 후 다시 입력하면 됨) — 필요하면 version 4로
+- 기존 1,047개의 업체명 칸은 대부분 제목형 문구라 구조화 데이터 `name`도 그 문구 그대로 나감 — 관리자 화면에서 업체명을 실제 상호로 고치면 해결(코드로 추측해서 바꾸지 않음)
+- 이미 공개된 FAQ 평서문 8개(대기열 10개 페이지)는 그대로 — 고치려면 관리자 화면 FAQ에서 질문 문장으로 수정

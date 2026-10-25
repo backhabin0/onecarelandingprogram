@@ -133,10 +133,19 @@ describe("예약어", () => {
     expect(errorOf({ slug })).toBe(SLUG_RULE);
   });
 
-  it("예약어를 포함하기만 한 slug는 허용", () => {
-    expect(errorOf({ slug: "admin-gym" })).toBeUndefined();
+  it("예약어가 가운데·끝에 있으면 허용", () => {
+    expect(errorOf({ slug: "my-admin-gym" })).toBeUndefined();
     expect(errorOf({ slug: "my-login" })).toBeUndefined();
+    expect(errorOf({ slug: "rapid-api" })).toBeUndefined();
+    expect(errorOf({ slug: "apartment-gym" })).toBeUndefined(); // "apa"는 "api"가 아님
   });
+
+  it.each(["admin-gym", "administrator", "login-help", "loginx", "api-gym", "apink-xxx", "apiary", "ADMIN-GYM"])(
+    "admin·login·api로 시작하는 %s → 사용할 수 없음(robots.txt 차단과 같은 규칙)",
+    (slug) => {
+      expect(errorOf({ slug })).toBe("admin, login, api로 시작하는 URL은 사용할 수 없습니다(검색엔진 차단 주소와 겹침).");
+    }
+  );
 });
 
 describe("글자 수", () => {
@@ -265,7 +274,7 @@ describe("예전 검증 코드와 결과가 같다", () => {
   const variants: Record<keyof CreateLandingPageInput, string[]> = {
     businessName: ["원케어", "", "  ", "가".repeat(100), "가".repeat(101), ` ${"가".repeat(100)} `],
     title: ["PT", "", "가".repeat(101)],
-    slug: ["gym", "", " Gym ", "a_b", "admin", "ADMIN", "sitemap.xml", "a--b", "-a", "admin-gym"],
+    slug: ["gym", "", " Gym ", "a_b", "admin", "ADMIN", "sitemap.xml", "a--b", "-a", "my-admin-gym"],
     heroText: ["", "가".repeat(201)],
     description: ["", "가".repeat(2001)],
     phone: ["", "010", "0".repeat(31)],

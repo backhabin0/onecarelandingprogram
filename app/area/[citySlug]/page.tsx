@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import JsonLd from "@/components/seo/JsonLd";
+import { Breadcrumbs } from "@/components/landing/LocalSeoSections";
+import { buildBreadcrumbJsonLd } from "@/lib/structured-data";
 import { getAreaHub } from "@/lib/local-pages";
 import { SLUG_PATTERN } from "@/lib/landing-page-validation";
-import { areaHubPath, type AreaHub } from "@/lib/local-seo";
+import { areaHubPath, buildHubBreadcrumbs, type AreaHub } from "@/lib/local-seo";
 import { getAbsoluteUrl } from "@/lib/site";
 
 // 공개 페이지가 생기거나 바뀌면 바로 반영되도록 매 요청마다 조회한다(/[slug]와 같음).
@@ -59,8 +61,9 @@ export default async function AreaHubPage({ params }: AreaHubPageProps) {
 
   const { hub, businessNames } = loaded;
   const { description } = describeHub(hub, businessNames);
-  // 경로 표시·BreadcrumbList는 넣지 않는다: "홈"(/)은 관리자 로그인으로 넘어가는 주소라 빼고,
-  // 그러면 이 페이지의 경로는 "시/군" 1개뿐인데 BreadcrumbList는 2개 이상이어야 한다.
+  // 경로: 홈 › 시/군 (화면 표시와 BreadcrumbList가 같은 내용)
+  const breadcrumbs = buildHubBreadcrumbs(hub);
+  const breadcrumbJsonLd = buildBreadcrumbJsonLd(breadcrumbs);
   const itemListJsonLd = {
     "@context": "https://schema.org",
     "@type": "ItemList",
@@ -78,7 +81,9 @@ export default async function AreaHubPage({ params }: AreaHubPageProps) {
   return (
     <div className="flex min-h-screen flex-col bg-white">
       <JsonLd data={itemListJsonLd} />
+      {breadcrumbJsonLd ? <JsonLd data={breadcrumbJsonLd} /> : null}
       <main className="flex-1">
+        <Breadcrumbs items={breadcrumbs} />
         <section className="bg-slate-50">
           <div className="mx-auto max-w-3xl px-5 py-12 sm:py-16">
             <h1 className="text-3xl font-bold leading-tight text-slate-900 sm:text-4xl">{hub.city} 지역 안내</h1>

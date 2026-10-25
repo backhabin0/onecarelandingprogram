@@ -88,7 +88,9 @@ const PAGE_CASES: [string, Partial<CreateLandingPageInput>, string | null][] = [
   ["예약어 admin", { slug: "admin" }, "사용할 수 없는 URL입니다."],
   ["예약어 대문자 API", { slug: " API " }, "사용할 수 없는 URL입니다."],
   ["예약어 login", { slug: "login" }, "사용할 수 없는 URL입니다."],
-  ["예약어 포함은 허용(admin-gym)", { slug: "admin-gym" }, null],
+  ["admin으로 시작(admin-gym)", { slug: "admin-gym" }, "admin, login, api로 시작하는 URL은 사용할 수 없습니다(검색엔진 차단 주소와 겹침)."],
+  ["api로 시작(apink-gym, 대문자)", { slug: " APINK-GYM " }, "admin, login, api로 시작하는 URL은 사용할 수 없습니다(검색엔진 차단 주소와 겹침)."],
+  ["예약어가 가운데 있으면 허용(my-admin-gym)", { slug: "my-admin-gym" }, null],
   ["업체명 100자는 허용", { businessName: longText(100) }, null],
   ["업체명 101자", { businessName: longText(101) }, "업체명은 100자 이내로 입력해주세요."],
   ["업체명 앞뒤 공백은 길이에서 제외", { businessName: ` ${longText(100)} ` }, null],
@@ -168,6 +170,7 @@ const DUPLICATE_CASES: [string, { businessName: string; title: string; slug: str
   ["slug 규칙 위반", { businessName: "a", title: "PT", slug: "gym copy", status: "public" }, SLUG_RULE],
   ["예약어", { businessName: "a", title: "PT", slug: "robots.txt", status: "public" }, SLUG_RULE],
   ["예약어 api", { businessName: "a", title: "PT", slug: "api", status: "public" }, "사용할 수 없는 URL입니다."],
+  ["login으로 시작(login-gym-copy)", { businessName: "a", title: "PT", slug: "login-gym-copy", status: "public" }, "admin, login, api로 시작하는 URL은 사용할 수 없습니다(검색엔진 차단 주소와 겹침)."],
   ["업체명 101자", { businessName: longText(101), title: "PT", slug: "gym", status: "public" }, "업체명은 100자 이내로 입력해주세요."],
   ["제목 101자", { businessName: "a", title: longText(101), slug: "gym", status: "public" }, "페이지 제목은 100자 이내로 입력해주세요."],
 ];

@@ -143,7 +143,7 @@ describe("매일 실행 등록 SQL(supabase/manual/015_cron_schedule.sql)", () =
         $$ delete from cron.job where jobid = job_id returning true $$;
     `);
     const sql = readFileSync(join(__dirname, "..", "supabase", "manual", "015_cron_schedule.sql"), "utf8").replace(
-      "create extension if not exists pg_cron;",
+      "create extension if not exists pg_cron with schema pg_catalog;",
       ""
     );
     await db.exec(sql);

@@ -1,5 +1,6 @@
 import type { LandingPage } from "@/types/landing-page";
 import type { LandingPageFaq, ResolvedFaq } from "@/types/seo";
+import { isDistinctBusinessName, looksLikePostalAddress, withTopicParticle } from "@/lib/business-info";
 
 /**
  * DB에 실제로 존재하는 값만으로 답변 가능한 FAQ만 자동 생성한다.
@@ -11,17 +12,21 @@ export function buildAutomaticFaqs(landingPage: LandingPage): ResolvedFaq[] {
   const faqs: ResolvedFaq[] = [];
   const businessName = landingPage.business_name.trim();
 
+  // 업체명 칸에 제목형 문구가 들어 있으면("…해결하는 방법은 어떤 곳인가요?") 질문이 되지 않으므로 뺀다.
   const aboutAnswer = landingPage.description?.trim() || landingPage.hero_text?.trim();
-  if (aboutAnswer) {
+  if (aboutAnswer && isDistinctBusinessName(businessName, landingPage.title)) {
     faqs.push({
-      question: `${businessName}은 어떤 곳인가요?`,
+      question: `${withTopicParticle(businessName)} 어떤 곳인가요?`,
       answer: aboutAnswer,
     });
   }
 
-  if (landingPage.address?.trim()) {
+  // 주소 칸이 실제 주소로 보일 때만(제목형 문구·slug가 들어 있으면 잘못된 위치 안내가 된다).
+  if (looksLikePostalAddress(landingPage.address, [businessName, landingPage.title]) && landingPage.address) {
     faqs.push({
-      question: `${businessName} 위치는 어디인가요?`,
+      question: isDistinctBusinessName(businessName, landingPage.title)
+        ? `${businessName} 위치는 어디인가요?`
+        : "위치는 어디인가요?",
       answer: `${landingPage.address.trim()}에 위치해 있습니다.`,
     });
   }
