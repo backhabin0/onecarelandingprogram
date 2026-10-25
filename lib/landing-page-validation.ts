@@ -1,4 +1,4 @@
-import { isReservedSlug } from "@/lib/slug";
+import { BLOCKED_SLUG_PREFIX_MESSAGE, isReservedSlug, RESERVED_SLUGS } from "@/lib/slug";
 import type {
   CreateLandingPageInput,
   LandingPageStatus,
@@ -197,10 +197,13 @@ function collectNormalizedIssues(
           "URL Slug는 영문 소문자, 숫자, 하이픈(-)만 사용할 수 있습니다. 예: a-gym",
       });
     } else if (isReservedSlug(normalized.slug)) {
+      // 예약어와 똑같으면 기존 문구, admin·login·api로 시작하기만 하면 이유를 알려 준다.
       issues.push({
         code: "reserved_slug",
         fields: ["slug"],
-        message: "사용할 수 없는 URL입니다.",
+        message: RESERVED_SLUGS.includes(normalized.slug)
+          ? "사용할 수 없는 URL입니다."
+          : BLOCKED_SLUG_PREFIX_MESSAGE,
       });
     }
   }

@@ -1,4 +1,5 @@
 import { FAQ_MAX_LENGTH, LANDING_PAGE_MAX_LENGTH, SEO_MAX_LENGTH, SLUG_PATTERN } from "@/lib/landing-page-validation";
+import { BLOCKED_SLUG_PREFIX_MESSAGE, hasBlockedSlugPrefix } from "@/lib/slug";
 import { BULK_UPLOAD_COLUMNS, CUSTOMER_ONLY_FIELDS, type BulkUploadField } from "./columns";
 import { MAX_UPLOAD_ROWS } from "./parse";
 
@@ -248,6 +249,15 @@ export function buildBulkPrompts(input: {
   if (input.regions.length === 0) errors.push("지역을 한 개 이상 입력해주세요.");
   if (input.keywords.length === 0) errors.push("키워드를 한 개 이상 입력해주세요.");
   if (!input.business.businessName.trim()) errors.push("업체명을 입력해주세요.");
+  // 만들어질 URL(지역slug-키워드slug)이 admin·login·api로 시작하면 등록 검사에서 막히므로 미리 알린다.
+  const blockedRegions = Array.from(
+    new Set(combinations.filter((c) => hasBlockedSlugPrefix(`${c.region.slug}-${c.keyword.slug}`)).map((c) => c.region))
+  );
+  if (blockedRegions.length > 0) {
+    errors.push(
+      `${blockedRegions.map((r) => `${r.name}(${r.slug})`).join(", ")}: ${BLOCKED_SLUG_PREFIX_MESSAGE} 지역 slug를 바꿔주세요.`
+    );
+  }
   if (combinations.length > MAX_UPLOAD_ROWS) {
     errors.push(
       `조합이 ${combinations.length.toLocaleString()}개입니다. 한 번에 올릴 수 있는 ${MAX_UPLOAD_ROWS.toLocaleString()}개 이하로 줄여주세요.`

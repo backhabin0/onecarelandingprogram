@@ -535,3 +535,76 @@ describe("대표 업체 없이 렌더링(미리보기 등)", () => {
     expect(org.url).toBe("https://example.test/gunpo-sanbon-leak-detection");
   });
 });
+
+describe("slug: admin·login·api로 시작하는 주소 금지(robots.txt 차단과 같은 규칙)", () => {
+  const MSG = "admin, login, api로 시작하는 URL은 사용할 수 없습니다(검색엔진 차단 주소와 겹침).";
+
+  it("공용 판별(isReservedSlug): 예약어·앞부분 차단, 가운데·끝은 허용", async () => {
+    const { isReservedSlug, hasBlockedSlugPrefix, BLOCKED_SLUG_PREFIXES } = await import("@/lib/slug");
+    expect(BLOCKED_SLUG_PREFIXES).toEqual(["admin", "login", "api"]);
+    for (const slug of ["admin", "admin-xxx", "apink-xxx", "api2", "login-help", " ADMIN-GYM "]) {
+      expect(hasBlockedSlugPrefix(slug), slug).toBe(true);
+      expect(isReservedSlug(slug), slug).toBe(true);
+    }
+    for (const slug of ["my-admin", "rapid-api", "apartment", "a-login", "area-gym"]) {
+      expect(isReservedSlug(slug), slug).toBe(false);
+    }
+  });
+
+  it("robots.txt Disallow가 같은 목록에서 만들어진다", async () => {
+    const { BLOCKED_SLUG_PREFIXES } = await import("@/lib/slug");
+    const result = robots();
+    const rules = Array.isArray(result.rules) ? result.rules[0] : result.rules;
+    expect(rules.disallow).toEqual(BLOCKED_SLUG_PREFIXES.map((p) => `/${p}`));
+  });
+
+  it("대량 등록(엑셀·붙여넣기·대기열 수정 공용 검사): 자동 slug와 직접 입력 slug 모두 막는다", async () => {
+    const { checkBulkUploadRows } = await import("@/lib/bulk-upload/check");
+    const base = {
+      region: "압구정동",
+      keyword: "누수탐지",
+      keywordSlug: "leak-detection",
+      businessName: "원케어배관",
+      title: "압구정동 누수탐지",
+      heroText: "문구",
+      description: "설명입니다.",
+      mainImageUrl: "https://img.example/a.jpg",
+    };
+    const result = checkBulkUploadRows(
+      [
+        { rowNumber: 2, values: { ...base, regionSlug: "apgujeong" }, warnings: [] },
+        { rowNumber: 3, values: { ...base, region: "아피동", regionSlug: "apink" }, warnings: [] },
+        { rowNumber: 4, values: { ...base, region: "직접동", regionSlug: "jikjeop", slug: "admin-page" }, warnings: [] },
+      ],
+      { existingSlugs: [], existingPairs: [], corpus: [], thresholds: { warning: 0.6, error: 0.8 } }
+    );
+    const errorsOf = (i: number) => result.rows[i].errors.filter((e) => e.code === "reserved_slug").map((e) => e.message);
+    expect(errorsOf(0)).toEqual([]);
+    expect(errorsOf(1)).toEqual([MSG]);
+    expect(errorsOf(2)).toEqual([MSG]);
+    expect(result.rows[1].status).toBe("error");
+  });
+
+  it("프롬프트 만들기: 만들어질 URL이 차단 글자로 시작하는 지역이 있으면 프롬프트를 만들지 않는다", () => {
+    const business = { businessName: "원케어배관", phone: "", kakaoUrl: "", address: "", template: "template-a", industry: "" };
+    const blocked = buildBulkPrompts({
+      regions: [
+        { name: "압구정동", slug: "apgujeong" },
+        { name: "아피동", slug: "apink" },
+        { name: "로그동", slug: "login-dong" },
+      ],
+      keywords: [{ name: "누수탐지", slug: "leak-detection" }, { name: "배관청소", slug: "pipe-cleaning" }],
+      business,
+    });
+    expect(blocked.prompts).toEqual([]);
+    expect(blocked.errors).toEqual([`아피동(apink), 로그동(login-dong): ${MSG} 지역 slug를 바꿔주세요.`]);
+
+    const ok = buildBulkPrompts({
+      regions: [{ name: "압구정동", slug: "apgujeong" }],
+      keywords: [{ name: "관리자", slug: "admin" }], // 키워드 slug는 뒤에 붙으므로 괜찮다(apgujeong-admin)
+      business,
+    });
+    expect(ok.errors).toEqual([]);
+    expect(ok.prompts).toHaveLength(1);
+  });
+});

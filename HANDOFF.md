@@ -693,19 +693,20 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 | migration 017 `site_profile` | 단일 행(`id='default'`), 업체명 100·소개 320·전화 30·카카오 500자. anon 읽기만, authenticated 수정만(추가·삭제 정책 없음). 되돌리기 `supabase/rollback/017_down.sql` |
 | 관리자 설정 | "사이트 대표 업체" 카드(업체명·한 줄 소개·대표 전화·카카오 URL). `updateSiteProfileAction` |
 | 공개 홈 `/` | /admin 이동 대신 공개 홈: 대표 업체 소개·전화·카카오(설정한 값만), 서비스(키워드)별 링크(키워드당 최대 12개 + 시/군 모음 링크), 지역(시/군 모음)별 링크. JSON-LD WebSite + LocalBusiness(`/#business`, areaServed=허브 시/군). 템플릿 A 톤. 관리자 링크 없음 |
-| robots | `disallow: /admin, /login, /api`(모두 끝 슬래시 없이 — 주소 자체와 하위 경로를 함께 막음. 예전 `/admin/`는 `/admin` 자체를 못 막았음. 앞부분 일치라 `api…`·`admin…`·`login…`으로 시작하는 slug도 막히니 이런 slug는 쓰지 말 것 — 2026-10-25 기준 해당 페이지 0개), `allow: /, /area/, /llms.txt`, sitemap. 쓰이지 않던 루트 `robots.txt`(도메인 틀림) 삭제 |
+| robots | `disallow: /admin, /login, /api`(모두 끝 슬래시 없이 — 주소 자체와 하위 경로를 함께 막음. 예전 `/admin/`는 `/admin` 자체를 못 막았음. 앞부분 일치라 `api…`·`admin…`·`login…`으로 시작하는 slug도 막히므로 아래 slug 규칙으로 만들 수 없게 함. Disallow는 `lib/slug.ts`의 `BLOCKED_SLUG_PREFIXES`로 만든다), `allow: /, /area/, /llms.txt`, sitemap. 쓰이지 않던 루트 `robots.txt`(도메인 틀림) 삭제 |
 | sitemap | 첫 항목에 홈. lastmod = 홈에 보이는 페이지·대표 업체 설정 중 최신(기존 페이지 수정은 홈 lastmod에 영향 없음, 보이는 것이 없으면 생략) |
 | `/llms.txt` | 동적 생성(llmstxt.org 형식): 업체명(없으면 도메인)·한 줄 소개·서비스별 페이지·시/군 허브·문의 방법(설정 값만 + 상담 신청 양식)·홈/sitemap 주소 |
 | 경로(Breadcrumb) | 홈이 공개되어 "홈 › 시/군 › 페이지"로 다시 넣음. 시/군 없으면 "홈 › 페이지". 지역 모음 페이지에도 "홈 › 시/군" 표시 + BreadcrumbList |
 | 랜딩 구조화 데이터 | areaServed "군포시 군포시 산본동" 중복 수정. 주소 칸이 주소처럼 보일 때만 PostalAddress(`lib/business-info.ts`). 주소·서비스 지역이 없으면 Organization. 업체명이 대표 업체와 같으면 홈과 같은 `@id`·이름·url(홈)·소개, 전화는 페이지 값 → 대표 업체 값. WebPage에 `inLanguage`·`isPartOf`(WebSite) |
 | 자동 SEO·FAQ | 업체명=제목이면 title "X \| X" 중복 제거. meta description에서 해시태그·줄바꿈 제거(화면 본문은 그대로). 자동 FAQ: 업체명이 이름으로 보일 때만 "OO은/는 어떤 곳인가요?"(조사 자동), 주소처럼 보일 때만 위치 FAQ |
 | AEO | 대량 생성 프롬프트 규칙 7 "FAQ 질문은 손님 말투의 실제 질문 한 문장, 물음표로 끝냄"(글자 수 규칙은 8번으로). 대량 등록 검사에 경고 `faq_not_question`(저장은 막지 않음) |
+| slug 규칙 | `admin`·`login`·`api`로 시작하는 slug(예: `admin-xxx`, `apink-xxx`) 금지 — 공용 `isReservedSlug`에 앞부분 검사 추가. 수동 생성·수정·복제·대량 등록(엑셀·붙여넣기·대기열 수정)·백업 복구가 같은 함수를 쓰고, 프롬프트 만들기는 "지역slug-키워드slug"가 걸리는 지역이 있으면 프롬프트를 만들지 않고 알려 줌. 문구 "admin, login, api로 시작하는 URL은 사용할 수 없습니다(검색엔진 차단 주소와 겹침)."(예약어와 똑같으면 기존 문구). 2026-10-25 운영 DB 확인(읽기만): 랜딩·대기열에 해당 slug 0개 |
 | `<html lang>` | `en` → `ko` |
 
 ### 검증
 
-- `npm test` 507개 ✅(기존 458 + 신규 49: `tests/seo-geo.test.tsx` 40, `tests/site-profile.db.test.ts` 9). 기존 테스트 중 "홈 없음"·sitemap 개수·"X \| 업체명"을 기대하던 것은 새 동작에 맞게 고침
-- 일부러 망가뜨려 확인(확인 후 원복): robots `/admin/` → 1개 실패, areaServed 중복 제거 빼기 → 2개, 홈 lastmod에 모든 페이지 → 2개, 017 anon 읽기 정책 제거 → 2개, 주소 판별 제거 → 1개, 대표 업체 묶기 제거 → 2개
+- `npm test` 524개 ✅(기존 458 + `tests/seo-geo.test.tsx` 44, `tests/site-profile.db.test.ts` 9, slug 규칙 케이스는 validation·actions 테스트에도 추가). 기존 테스트 중 "홈 없음"·sitemap 개수·"X \| 업체명"·"admin-gym 허용"을 기대하던 것은 새 동작에 맞게 고침. 2단계 동작 비교 테스트의 예전 코드 사본은 고치지 않고, 비교 입력의 `admin-gym`만 `my-admin-gym`으로 바꿈
+- 일부러 망가뜨려 확인(확인 후 원복): robots `/admin/` → 1개 실패, areaServed 중복 제거 빼기 → 2개, 홈 lastmod에 모든 페이지 → 2개, 017 anon 읽기 정책 제거 → 2개, 주소 판별 제거 → 1개, 대표 업체 묶기 제거 → 2개, slug 앞부분 검사 제거 → 15개
 - `npx tsc --noEmit` ✅ / `npx eslint` ✅ / `npx next build` ✅(`/llms.txt` 동적, 빌드 로그 "Dynamic server usage"는 기존과 같은 안내)
 - 실데이터 화면 확인은 못 함(로컬 `.env.local` 없음) → PR 미리보기 배포에서 확인
 
