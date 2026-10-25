@@ -693,7 +693,7 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 | migration 017 `site_profile` | 단일 행(`id='default'`), 업체명 100·소개 320·전화 30·카카오 500자. anon 읽기만, authenticated 수정만(추가·삭제 정책 없음). 되돌리기 `supabase/rollback/017_down.sql` |
 | 관리자 설정 | "사이트 대표 업체" 카드(업체명·한 줄 소개·대표 전화·카카오 URL). `updateSiteProfileAction` |
 | 공개 홈 `/` | /admin 이동 대신 공개 홈: 대표 업체 소개·전화·카카오(설정한 값만), 서비스(키워드)별 링크(키워드당 최대 12개 + 시/군 모음 링크), 지역(시/군 모음)별 링크. JSON-LD WebSite + LocalBusiness(`/#business`, areaServed=허브 시/군). 템플릿 A 톤. 관리자 링크 없음 |
-| robots | `disallow: /admin, /login, /api/`(예전 `/admin/`는 `/admin` 자체를 못 막았음), `allow: /, /area/, /llms.txt`, sitemap. 쓰이지 않던 루트 `robots.txt`(도메인 틀림) 삭제 |
+| robots | `disallow: /admin, /login, /api`(모두 끝 슬래시 없이 — 주소 자체와 하위 경로를 함께 막음. 예전 `/admin/`는 `/admin` 자체를 못 막았음. 앞부분 일치라 `api…`·`admin…`·`login…`으로 시작하는 slug도 막히니 이런 slug는 쓰지 말 것 — 2026-10-25 기준 해당 페이지 0개), `allow: /, /area/, /llms.txt`, sitemap. 쓰이지 않던 루트 `robots.txt`(도메인 틀림) 삭제 |
 | sitemap | 첫 항목에 홈. lastmod = 홈에 보이는 페이지·대표 업체 설정 중 최신(기존 페이지 수정은 홈 lastmod에 영향 없음, 보이는 것이 없으면 생략) |
 | `/llms.txt` | 동적 생성(llmstxt.org 형식): 업체명(없으면 도메인)·한 줄 소개·서비스별 페이지·시/군 허브·문의 방법(설정 값만 + 상담 신청 양식)·홈/sitemap 주소 |
 | 경로(Breadcrumb) | 홈이 공개되어 "홈 › 시/군 › 페이지"로 다시 넣음. 시/군 없으면 "홈 › 페이지". 지역 모음 페이지에도 "홈 › 시/군" 표시 + BreadcrumbList |
@@ -704,7 +704,7 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 
 ### 검증
 
-- `npm test` 506개 ✅(기존 458 + 신규 48: `tests/seo-geo.test.tsx` 39, `tests/site-profile.db.test.ts` 9). 기존 테스트 중 "홈 없음"·sitemap 개수·"X \| 업체명"을 기대하던 것은 새 동작에 맞게 고침
+- `npm test` 507개 ✅(기존 458 + 신규 49: `tests/seo-geo.test.tsx` 40, `tests/site-profile.db.test.ts` 9). 기존 테스트 중 "홈 없음"·sitemap 개수·"X \| 업체명"을 기대하던 것은 새 동작에 맞게 고침
 - 일부러 망가뜨려 확인(확인 후 원복): robots `/admin/` → 1개 실패, areaServed 중복 제거 빼기 → 2개, 홈 lastmod에 모든 페이지 → 2개, 017 anon 읽기 정책 제거 → 2개, 주소 판별 제거 → 1개, 대표 업체 묶기 제거 → 2개
 - `npx tsc --noEmit` ✅ / `npx eslint` ✅ / `npx next build` ✅(`/llms.txt` 동적, 빌드 로그 "Dynamic server usage"는 기존과 같은 안내)
 - 실데이터 화면 확인은 못 함(로컬 `.env.local` 없음) → PR 미리보기 배포에서 확인

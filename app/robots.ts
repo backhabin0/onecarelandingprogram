@@ -14,7 +14,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: ["/", "/area/", "/llms.txt"],
-      disallow: ["/admin", "/login", "/api/"],
+      disallow: ["/admin", "/login", "/api"],
     },
     sitemap: getAbsoluteUrl("/sitemap.xml"),
   };

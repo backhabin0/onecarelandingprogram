@@ -418,12 +418,25 @@ describe("sitemap.xml: 홈 + lastmod", () => {
 });
 
 describe("robots.txt", () => {
-  it("/admin·/login·/api 차단(끝 슬래시 없는 /admin도), 홈·허브·llms.txt 허용, sitemap 주소", () => {
+  it("/admin·/login·/api를 끝 슬래시 없이 차단, 홈·허브·llms.txt 허용, sitemap 주소", () => {
     const result = robots();
     const rules = Array.isArray(result.rules) ? result.rules[0] : result.rules;
-    expect(rules.disallow).toEqual(["/admin", "/login", "/api/"]);
+    expect(rules.disallow).toEqual(["/admin", "/login", "/api"]);
     expect(rules.allow).toEqual(["/", "/area/", "/llms.txt"]);
     expect(result.sitemap).toBe("https://example.test/sitemap.xml");
+  });
+
+  it("robots.txt 규칙(앞부분 일치)으로 주소 자체와 하위 경로가 모두 막히고, 공개 주소는 막히지 않는다", () => {
+    const result = robots();
+    const rules = Array.isArray(result.rules) ? result.rules[0] : result.rules;
+    const disallow = ([] as string[]).concat(rules.disallow ?? []);
+    const blocked = (path: string) => disallow.some((prefix) => path.startsWith(prefix));
+    for (const path of ["/admin", "/admin/", "/admin/settings", "/login", "/login?next=/admin", "/api", "/api/", "/api/indexnow"]) {
+      expect(blocked(path), path).toBe(true);
+    }
+    for (const path of ["/", "/area/gunpo", "/llms.txt", "/sitemap.xml", "/gunpo-sanbon-leak-detection"]) {
+      expect(blocked(path), path).toBe(false);
+    }
   });
 });
 
