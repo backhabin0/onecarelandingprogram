@@ -3,22 +3,29 @@ import PageHeader from "@/components/admin/PageHeader";
 import Card from "@/components/admin/Card";
 import PageTable from "@/components/admin/PageTable";
 import Pagination from "@/components/admin/Pagination";
+import PageSearchForm from "@/components/admin/PageSearchForm";
 import { LANDING_PAGES_PAGE_SIZE, getLandingPagesPage } from "@/lib/landing-pages";
+import { getSiteProfile } from "@/lib/site-profile";
 
 // 관리자 목록은 항상 최신 DB 상태를 조회해야 하므로 정적 프리렌더링을 사용하지 않는다.
 export const dynamic = "force-dynamic";
 
 interface AdminPagesPageProps {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; search?: string }>;
 }
 
 export default async function AdminPagesPage({ searchParams }: AdminPagesPageProps) {
   const params = await searchParams;
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
+  const search = params.search?.trim() || "";
 
-  const { data: pages, count, error } = await getLandingPagesPage(page);
+  const [{ data: pages, count, error }, siteProfile] = await Promise.all([
+    getLandingPagesPage(page, search),
+    getSiteProfile(),
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(count / LANDING_PAGES_PAGE_SIZE));
+  const baseParams: Record<string, string> = search ? { search } : {};
 
   return (
     <div>
@@ -41,13 +48,23 @@ export default async function AdminPagesPage({ searchParams }: AdminPagesPagePro
         </div>
       ) : null}
 
+      <Card className="mb-4 p-4">
+        <PageSearchForm currentSearch={search} />
+      </Card>
+
       <Card>
-        <PageTable pages={pages} />
+        <PageTable
+          key={`${search}|${page}`}
+          pages={pages}
+          search={search}
+          totalCount={count}
+          siteBusinessName={siteProfile.businessName}
+        />
         {count > 0 ? (
           <Pagination
             page={page}
             totalPages={totalPages}
-            baseParams={{}}
+            baseParams={baseParams}
             basePath="/admin/pages"
           />
         ) : null}

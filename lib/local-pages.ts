@@ -153,6 +153,8 @@ export async function getAreaHub(
 }
 
 export interface PublishedUrl {
+  /** landing_pages.id(수집 요청 완료 체크에 씀) */
+  id: string;
   url: string;
   slug: string;
   publishedAt: string;
@@ -168,7 +170,7 @@ export async function getPublishedUrlsForDate(
   try {
     const { start, end } = kstDayRange(date);
     const supabase = await getSupabaseServerClient();
-    const { data, error } = await fetchAllRows<{ slug: string; published_at: string }>((from, to) =>
+    const { data, error } = await fetchAllRows<{ id: string; slug: string; published_at: string }>((from, to) =>
       supabase
         .from("landing_pages")
         .select("slug, published_at, id")
@@ -184,7 +186,12 @@ export async function getPublishedUrlsForDate(
       return { data: [], error: "공개된 주소를 불러오지 못했습니다." };
     }
     return {
-      data: data.map((row) => ({ url: getAbsoluteUrl(`/${row.slug}`), slug: row.slug, publishedAt: row.published_at })),
+      data: data.map((row) => ({
+        id: row.id,
+        url: getAbsoluteUrl(`/${row.slug}`),
+        slug: row.slug,
+        publishedAt: row.published_at,
+      })),
       error: null,
     };
   } catch (err) {

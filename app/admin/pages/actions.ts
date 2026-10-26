@@ -2,8 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
+import { isUuid } from "@/lib/bulk-upload/payload";
+import type { RenameTarget } from "@/lib/business-name-rename";
 import {
+  BUSINESS_NAME_RENAME_CHUNK_SIZE,
   isValidLandingPageStatus,
+  validateBusinessNameInput,
   validateDuplicateLandingPageInput,
   validateFaqInput,
   validateLandingPageInput,
@@ -12,7 +16,9 @@ import {
 import {
   deleteLandingPage,
   duplicateLandingPage,
+  getLandingPageRenameTargets,
   insertLandingPage,
+  renameLandingPages,
   updateLandingPage,
   updateLandingPageImageUrl,
   updateLandingPageStatus,
@@ -212,6 +218,63 @@ export async function toggleLandingPageStatusAction(
   }
 
   return result;
+}
+
+// ============================================================
+// 업체명 일괄 변경
+// ============================================================
+
+export interface RenameBusinessNameResult {
+  success: boolean;
+  /** 실제로 바뀐 항목 수(이미 같은 이름이던 항목은 빼고 셈) */
+  changed: number;
+  error?: string;
+}
+
+/** id 목록 검사: 1~100개, 모두 uuid, 중복 없음 */
+function sanitizeRenameIds(ids: unknown): string[] | null {
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > BUSINESS_NAME_RENAME_CHUNK_SIZE) return null;
+  if (!ids.every(isUuid)) return null;
+  return Array.from(new Set(ids as string[]));
+}
+
+/**
+ * 선택한 랜딩페이지 업체명을 한꺼번에 바꾼다. 화면은 100개씩 나눠 순서대로 보낸다.
+ * 서버에서 생성·수정과 같은 규칙(필수, 100자)으로 다시 검사한다.
+ */
+export async function renameLandingPagesAction(
+  ids: unknown,
+  businessName: unknown
+): Promise<RenameBusinessNameResult> {
+  await requireUser();
+
+  const cleanIds = sanitizeRenameIds(ids);
+  if (!cleanIds || typeof businessName !== "string") {
+    return { success: false, changed: 0, error: "잘못된 요청입니다." };
+  }
+  const { value, error } = validateBusinessNameInput(businessName);
+  if (error) return { success: false, changed: 0, error };
+
+  const result = await renameLandingPages(cleanIds, value);
+  if (result.success) {
+    revalidatePath("/admin/pages");
+    revalidatePath("/admin");
+    // 업체명은 공개 페이지 화면·구조화 데이터·지역 모음 페이지 제목에 쓰인다.
+    for (const slug of result.slugs) revalidatePath(`/${slug}`);
+    revalidatePath("/area/[citySlug]", "page");
+  }
+  return { success: result.success, changed: result.changed, error: result.error };
+}
+
+/** 검색 조건에 맞는 페이지 전부(업체명 일괄 변경의 "검색 결과 전체 선택") */
+export async function getLandingPageRenameTargetsAction(
+  search: unknown
+): Promise<{ data: RenameTarget[]; error: string | null }> {
+  await requireUser();
+  if (typeof search !== "string") return { data: [], error: "잘못된 요청입니다." };
+
+  const { data, error } = await getLandingPageRenameTargets(search);
+  return { data: data.map((row) => ({ id: row.id, businessName: row.business_name })), error };
 }
 
 export interface UpdateLandingPageImageResult {

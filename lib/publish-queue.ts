@@ -9,6 +9,8 @@ import {
   issuesForStorage,
 } from "@/lib/bulk-upload/check";
 import { loadBulkCheckContext } from "@/lib/bulk-upload/context";
+import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
+import { ilikeAnyFilter, sanitizeSearchTerm } from "@/lib/search-term";
 import type { UploadValues } from "@/lib/bulk-upload/parse";
 import {
   LANDING_PAGE_QUEUE_STATES,
@@ -25,10 +27,8 @@ export function isQueueStateFilter(value: string): value is QueueStateFilter {
   return value === "all" || (LANDING_PAGE_QUEUE_STATES as readonly string[]).includes(value);
 }
 
-/** 검색어를 PostgREST `.or()` 필터 문자열에 안전하게 넣기 위해 필터 문법 문자(쉼표, 괄호)를 뺀다. */
-function sanitizeSearchTerm(term: string): string {
-  return term.replace(/[,()]/g, " ").trim();
-}
+/** 대기열 검색 대상 칸 */
+const QUEUE_SEARCH_COLUMNS = ["region", "keyword", "business_name", "title", "slug"] as const;
 
 export interface GetQueuePageResult {
   data: LandingPageQueueRow[];
@@ -57,13 +57,7 @@ export async function getQueuePage(filter: {
         .from("landing_page_queue")
         .select(head ? "id" : "*", { count: "exact", head });
       if (filter.state !== "all") query = query.eq("state", filter.state);
-      if (term) {
-        query = query.or(
-          ["region", "keyword", "business_name", "title", "slug"]
-            .map((column) => `${column}.ilike.%${term}%`)
-            .join(",")
-        );
-      }
+      if (term) query = query.or(ilikeAnyFilter(QUEUE_SEARCH_COLUMNS, term));
       return query;
     };
 
@@ -276,6 +270,61 @@ export async function deleteQueueItems(ids: string[]): Promise<BulkChangeResult>
   } catch (err) {
     console.error("[publish-queue] client error:", err instanceof Error ? err.message : err);
     return { success: false, changed: 0, error: "삭제하지 못했습니다." };
+  }
+}
+
+/**
+ * 업체명 일괄 변경 대상: 지금 상태 탭·검색 조건에 맞는 대기열 항목 전부(공개된 항목 제외 —
+ * 공개된 페이지는 랜딩페이지 관리에서 바꾼다). 목록과 같은 순서, 1,000행씩 끝까지 읽는다.
+ */
+export async function getQueueRenameTargets(filter: {
+  state: QueueStateFilter;
+  search: string;
+}): Promise<{ data: { id: string; business_name: string }[]; error: string | null }> {
+  try {
+    const supabase = await getSupabaseServerClient();
+    const term = sanitizeSearchTerm(filter.search);
+    const { data, error } = await fetchAllRows<{ id: string; business_name: string }>((from, to) => {
+      let query = supabase.from("landing_page_queue").select("id, business_name").neq("state", "published");
+      if (filter.state !== "all") query = query.eq("state", filter.state);
+      if (term) query = query.or(ilikeAnyFilter(QUEUE_SEARCH_COLUMNS, term));
+      return query.order("created_at", { ascending: true }).order("id", { ascending: true }).range(from, to);
+    });
+    if (error) {
+      console.error("[publish-queue] rename targets error:", error);
+      return { data: [], error: "대기열 항목을 불러오지 못했습니다." };
+    }
+    return { data, error: null };
+  } catch (err) {
+    console.error("[publish-queue] client error:", err instanceof Error ? err.message : err);
+    return { data: [], error: "대기열 항목을 불러오지 못했습니다." };
+  }
+}
+
+/**
+ * 대기열 항목 업체명을 한꺼번에 바꾼다(검사는 호출하는 action에서). 이미 공개된 항목과
+ * 이미 같은 이름인 항목은 건드리지 않는다. 업체명은 중복·유사도 검사 대상이 아니라
+ * validation_errors는 다시 계산하지 않는다.
+ */
+export async function renameQueueItems(ids: string[], businessName: string): Promise<BulkChangeResult> {
+  if (ids.length === 0) return { success: true, changed: 0 };
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("landing_page_queue")
+      .update({ business_name: businessName })
+      .in("id", ids)
+      .neq("state", "published")
+      .neq("business_name", businessName)
+      .select("id");
+    if (error) {
+      console.error("[publish-queue] rename error:", error.message);
+      return { success: false, changed: 0, error: "업체명을 바꾸지 못했습니다." };
+    }
+    return { success: true, changed: data?.length ?? 0 };
+  } catch (err) {
+    console.error("[publish-queue] client error:", err instanceof Error ? err.message : err);
+    return { success: false, changed: 0, error: "업체명을 바꾸지 못했습니다." };
   }
 }
 

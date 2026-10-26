@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
+import { ilikeAnyFilter, sanitizeSearchTerm } from "@/lib/search-term";
 import { removeLandingPageImageByUrl } from "@/lib/storage/landing-page-assets";
 import { getSeoSettingsByLandingPageId } from "@/lib/seo-settings";
 import { getFaqsByLandingPageId } from "@/lib/faqs";
@@ -62,19 +63,30 @@ interface GetLandingPagesPageResult {
   error: string | null;
 }
 
-/** 관리자 랜딩페이지 목록(/admin/pages) 서버 페이지네이션 조회. */
+/** 관리자 랜딩페이지 목록 검색 대상 칸(업체명·제목·URL) */
+const LANDING_PAGE_SEARCH_COLUMNS = ["business_name", "title", "slug"] as const;
+
+/**
+ * 관리자 랜딩페이지 목록(/admin/pages) 서버 페이지네이션 조회.
+ * search가 있으면 업체명·제목·URL(slug) 중 하나라도 포함하는 페이지만.
+ */
 export async function getLandingPagesPage(
-  page: number
+  page: number,
+  search = ""
 ): Promise<GetLandingPagesPageResult> {
   try {
     const supabase = await getSupabaseServerClient();
     const currentPage = page > 0 ? page : 1;
     const from = (currentPage - 1) * LANDING_PAGES_PAGE_SIZE;
     const to = from + LANDING_PAGES_PAGE_SIZE - 1;
+    const term = sanitizeSearchTerm(search);
 
-    const { data, error, count } = await supabase
-      .from("landing_pages")
-      .select("*", { count: "exact" })
+    const build = (head: boolean) => {
+      const query = supabase.from("landing_pages").select(head ? "id" : "*", { count: "exact", head });
+      return term ? query.or(ilikeAnyFilter(LANDING_PAGE_SEARCH_COLUMNS, term)) : query;
+    };
+
+    const { data, error, count } = await build(false)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
       .range(from, to);
@@ -83,9 +95,7 @@ export async function getLandingPagesPage(
       // 마지막 페이지를 넘는 page로 range를 요청하면 PostgREST가 416(PGRST103)을
       // 돌려준다. 오류가 아니라 "빈 페이지"로 취급하고 전체 건수만 다시 센다.
       if (error.code === "PGRST103") {
-        const { count: total, error: countError } = await supabase
-          .from("landing_pages")
-          .select("id", { count: "exact", head: true });
+        const { count: total, error: countError } = await build(true);
         if (!countError) {
           return { data: [], count: total ?? 0, error: null };
         }
@@ -105,6 +115,70 @@ export async function getLandingPagesPage(
           ? err.message
           : "랜딩페이지 목록을 불러오는 중 오류가 발생했습니다.",
     };
+  }
+}
+
+/**
+ * 업체명 일괄 변경 대상: 검색 조건에 맞는 페이지 전부(목록과 같은 순서). 1,000행씩 끝까지 읽는다.
+ */
+export async function getLandingPageRenameTargets(
+  search: string
+): Promise<{ data: { id: string; business_name: string }[]; error: string | null }> {
+  try {
+    const supabase = await getSupabaseServerClient();
+    const term = sanitizeSearchTerm(search);
+    const { data, error } = await fetchAllRows<{ id: string; business_name: string }>((from, to) => {
+      const query = supabase.from("landing_pages").select("id, business_name");
+      return (term ? query.or(ilikeAnyFilter(LANDING_PAGE_SEARCH_COLUMNS, term)) : query)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to);
+    });
+    if (error) {
+      console.error("[landing_pages] rename targets error:", error);
+      return { data: [], error: "랜딩페이지 목록을 불러오지 못했습니다." };
+    }
+    return { data, error: null };
+  } catch (err) {
+    console.error("[landing_pages] client error:", err);
+    return { data: [], error: "랜딩페이지 목록을 불러오지 못했습니다." };
+  }
+}
+
+export interface RenameLandingPagesResult {
+  success: boolean;
+  /** 실제로 바뀐 행 수(이미 같은 이름이던 페이지는 빼고 셈) */
+  changed: number;
+  /** 바뀐 페이지 slug(공개 페이지 캐시 갱신용) */
+  slugs: string[];
+  error?: string;
+}
+
+/**
+ * 랜딩페이지 업체명을 한꺼번에 바꾼다(검사는 호출하는 action에서). 이미 같은 이름인 페이지는
+ * 건드리지 않아 updated_at(sitemap lastmod)이 쓸데없이 바뀌지 않는다. 바뀐 페이지는
+ * 트리거가 updated_at을 갱신한다(내용이 바뀌었으므로).
+ * 홈 대표 업체와 묶이는 규칙은 그대로다 — 새 이름이 대표 업체명과 같을 때만 묶인다.
+ */
+export async function renameLandingPages(ids: string[], businessName: string): Promise<RenameLandingPagesResult> {
+  if (ids.length === 0) return { success: true, changed: 0, slugs: [] };
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("landing_pages")
+      .update({ business_name: businessName })
+      .in("id", ids)
+      .neq("business_name", businessName)
+      .select("id, slug");
+    if (error) {
+      console.error("[landing_pages] rename error:", error.message);
+      return { success: false, changed: 0, slugs: [], error: "업체명을 바꾸지 못했습니다." };
+    }
+    const rows = (data as { id: string; slug: string }[] | null) ?? [];
+    return { success: true, changed: rows.length, slugs: rows.map((row) => row.slug) };
+  } catch (err) {
+    console.error("[landing_pages] client error:", err);
+    return { success: false, changed: 0, slugs: [], error: "업체명을 바꾸지 못했습니다." };
   }
 }
 

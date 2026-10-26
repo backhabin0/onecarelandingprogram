@@ -4,7 +4,16 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import QueueStateBadge from "@/components/admin/QueueStateBadge";
-import { deleteQueueItemsAction, releaseHeldItemsAction } from "@/app/admin/queue/actions";
+import BusinessNameRenameBar from "@/components/admin/BusinessNameRenameBar";
+import SelectAllResultsNotice from "@/components/admin/SelectAllResultsNotice";
+import {
+  deleteQueueItemsAction,
+  getQueueRenameTargetsAction,
+  releaseHeldItemsAction,
+  renameQueueItemsAction,
+} from "@/app/admin/queue/actions";
+import type { RenameTarget } from "@/lib/business-name-rename";
+import type { QueueStateFilter } from "@/lib/publish-queue";
 import type { LandingPageQueueRow } from "@/types/publish-queue";
 
 const COLUMNS = ["", "지역 · 키워드", "업체명 / 제목", "URL", "상태", "유사도", "확인 사항", "관리"];
@@ -12,6 +21,13 @@ const COLUMNS = ["", "지역 · 키워드", "업체명 / 제목", "URL", "상태
 interface QueueTableProps {
   items: LandingPageQueueRow[];
   isFiltered: boolean;
+  /** 지금 상태 탭·검색어(검색 결과 전체 선택에 씀) */
+  state?: QueueStateFilter;
+  search?: string;
+  /** 검색 결과 전체 건수(공개된 항목 포함) */
+  totalCount?: number;
+  /** 홈 대표 업체명(업체명 일괄 변경 안내) */
+  siteBusinessName?: string | null;
 }
 
 /** validation_errors에서 화면에 보여줄 문구만 꺼낸다(형식이 다르면 건너뜀) */
@@ -30,10 +46,18 @@ function issueMessages(item: LandingPageQueueRow): { text: string; level: "error
 const formatDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "";
 
-export default function QueueTable({ items, isFiltered }: QueueTableProps) {
+export default function QueueTable({
+  items,
+  isFiltered,
+  state = "all",
+  search = "",
+  totalCount = items.length,
+  siteBusinessName = null,
+}: QueueTableProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // 선택(id → 지금 업체명). "검색 결과 전체 선택"이면 다른 페이지 항목도 들어 있다(업체명 바꾸기 전용).
+  const [selected, setSelected] = useState<Map<string, string>>(new Map());
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   if (items.length === 0) {
@@ -48,18 +72,33 @@ export default function QueueTable({ items, isFiltered }: QueueTableProps) {
   const selectedItems = items.filter((item) => selected.has(item.id));
   const selectedHold = selectedItems.filter((item) => item.state === "hold");
   const allSelected = selectable.length > 0 && selectable.every((item) => selected.has(item.id));
+  // 다른 페이지 항목까지 고른 상태에서는 보류 해제·삭제(한 번에 50개, 이 페이지 기준)를 막고 업체명 바꾸기만 쓴다.
+  const selectedOffPage = selected.size > selectedItems.length;
+  const renameTargets: RenameTarget[] = Array.from(selected, ([id, businessName]) => ({ id, businessName }));
 
-  const toggle = (id: string) => {
+  const toggle = (item: LandingPageQueueRow) => {
     setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const next = new Map(current);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.set(item.id, item.business_name);
       return next;
     });
   };
 
   const toggleAll = () => {
-    setSelected(allSelected ? new Set() : new Set(selectable.map((item) => item.id)));
+    setSelected(allSelected ? new Map() : new Map(selectable.map((item) => [item.id, item.business_name])));
+  };
+
+  const selectAllResults = async () => {
+    const { data, error } = await getQueueRenameTargetsAction(state, search);
+    if (error) return error;
+    setSelected(new Map(data.map((target) => [target.id, target.businessName])));
+    return null;
+  };
+
+  const handleRenameDone = () => {
+    setSelected(new Map());
+    router.refresh();
   };
 
   const run = (
@@ -76,7 +115,7 @@ export default function QueueTable({ items, isFiltered }: QueueTableProps) {
         return;
       }
       setMessage({ type: "success", text: doneText(result.changed) });
-      setSelected(new Set());
+      setSelected(new Map());
       router.refresh();
     });
   };
@@ -96,11 +135,11 @@ export default function QueueTable({ items, isFiltered }: QueueTableProps) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-sm">
-        <span className="text-slate-500">선택 {selectedItems.length}개</span>
+        <span className="text-slate-500">선택 {selected.size}개</span>
         <button
           type="button"
           onClick={() => handleRelease(selectedHold.map((item) => item.id))}
-          disabled={isPending || selectedHold.length === 0}
+          disabled={isPending || selectedOffPage || selectedHold.length === 0}
           className="rounded-md border border-slate-300 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           보류 → 공개 대기 ({selectedHold.length})
@@ -108,7 +147,7 @@ export default function QueueTable({ items, isFiltered }: QueueTableProps) {
         <button
           type="button"
           onClick={() => handleDelete(selectedItems.map((item) => item.id))}
-          disabled={isPending || selectedItems.length === 0}
+          disabled={isPending || selectedOffPage || selectedItems.length === 0}
           className="rounded-md border border-red-200 px-3 py-1.5 font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           삭제 ({selectedItems.length})
@@ -116,7 +155,28 @@ export default function QueueTable({ items, isFiltered }: QueueTableProps) {
         {message ? (
           <span className={message.type === "error" ? "text-red-600" : "text-green-700"}>{message.text}</span>
         ) : null}
+        {selectedOffPage ? (
+          <span className="text-xs text-slate-400">다른 페이지 항목까지 선택하면 업체명 바꾸기만 할 수 있습니다.</span>
+        ) : null}
       </div>
+      <SelectAllResultsNotice
+        pageCount={selectable.length}
+        selectedCount={selected.size}
+        allPageSelected={allSelected}
+        totalCount={totalCount}
+        selectAllLabel={`${isFiltered ? "검색 결과" : "대기열"}의 공개 전 항목 모두 선택`}
+        onSelectAll={selectAllResults}
+        onClear={() => setSelected(new Map())}
+      />
+      {selected.size > 0 ? (
+        <BusinessNameRenameBar
+          selected={renameTargets}
+          objectLabel="대기열 항목을"
+          rename={renameQueueItemsAction}
+          onDone={handleRenameDone}
+          siteBusinessName={siteBusinessName}
+        />
+      ) : null}
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[960px] border-collapse text-sm">
@@ -150,7 +210,7 @@ export default function QueueTable({ items, isFiltered }: QueueTableProps) {
                         type="checkbox"
                         aria-label={`${item.region} ${item.keyword} 선택`}
                         checked={selected.has(item.id)}
-                        onChange={() => toggle(item.id)}
+                        onChange={() => toggle(item)}
                       />
                     ) : null}
                   </td>

@@ -63,6 +63,17 @@ export function withTopicParticle(word: string): string {
   return `${text}은(는)`;
 }
 
+/** 방향 조사 로/으로: 받침이 없거나 ㄹ 받침이면 "로", 그 밖의 받침은 "으로". 한글이 아니면 "(으)로" */
+export function withDirectionParticle(word: string): string {
+  const text = word.trim();
+  const last = text.charCodeAt(text.length - 1);
+  if (last >= 0xac00 && last <= 0xd7a3) {
+    const final = (last - 0xac00) % 28;
+    return `${text}${final === 0 || final === 8 ? "로" : "으로"}`;
+  }
+  return `${text}(으)로`;
+}
+
 /**
  * meta description·llms.txt용 한 줄 글: 해시태그(#키워드)를 빼고 줄바꿈·연속 공백을 한 칸으로.
  * 화면 본문은 바꾸지 않는다(입력한 그대로 보여 줌).
