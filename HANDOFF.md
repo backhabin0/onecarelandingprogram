@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-26 (feature/admin-tweaks: 공개 주소 수집 요청 체크(018)·업체명 일괄 변경, 운영 미적용·미배포)
+마지막 업데이트: 2026-10-26 (feature/admin-tweaks 운영 배포 완료: migration 018 적용·main `9a46d67`)
 
 ## 배경
 
@@ -833,3 +833,25 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 
 1. 운영 DB 백업 → 018 적용(`begin;`/`commit;` 한 트랜잭션, 테이블 추가만이라 지금 코드와도 함께 동작)
 2. 머지 → 자동 배포 → `/admin/queue` 체크·URL 복사, `/admin/pages` 검색·선택·업체명 바꾸기(시험용 페이지 1개로) 확인
+
+### 운영 배포 ✅ (2026-10-26, 사용자 단계별 승인)
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | 운영 DB 백업(SELECT만) | `C:\Users\user\Documents\onecare-backup\2026-10-26_admin-tweaks-deploy\` — 12개 테이블 전부 받기 전 = 받은 뒤 = 저장 행 수, 기본키 중복 없음(landing_pages 1,107, events 608, faqs 192, queue 85, seo 66, indexnow 60·2, 상담 7, publish_runs 2, 설정 3개 각 1) + `schema.json`(칸 122·제약 67·인덱스 27·트리거 4·함수 7·정책 32·확장 6·버킷 1·cron 1) + storage.objects 목록 + 사진 24개(44,335,299 B, 크기 일치). 스크립트 `scripts\backup.mjs` |
+| 2 | migration 018 | 사전 점검(테이블·정책 없음, `landing_pages.id` uuid PK, `auth.uid()`·역할 있음) → 원본에 `begin;`/`commit;`만 붙여 실행(`apply-018.sql`) ✅. 테이블·PK·FK(ON DELETE CASCADE)·RLS·정책 3개(authenticated 조회·추가·삭제), 0행. anon 역할로 조회 0행·추가는 RLS 위반으로 막힘(롤백 트랜잭션에서 확인). 기존 12개 테이블 행 수 그대로, 사이트(이전 코드) 정상 |
+| 3 | 배포 전 운영 | `a8228cf` = **`dpl_5SPe4Md9ChMBCp4gnmMab9v5PAkt`** (`onecarelandingprogram-ouzonk4id-habin-s-projects.vercel.app`) ← 되돌리기용 |
+| 3 | 머지 | 사용자 "머지해" → main이 `a8228cf` 그대로인지 확인·`npm test` 548개 통과 → 로컬 `--no-ff` merge commit **`9a46d67`** push(PR 없음) → 자동 배포 **`dpl_48gHwvsYw2csMeUXP8qAtDGRWaad`** 성공(`onecarelandingprogram-eu6o0r60f-habin-s-projects.vercel.app`, 10-26 15:12 KST) |
+| 4 | 배포 후 확인(GET·읽기만) | 아래 표 — 모두 정상 |
+
+| 확인 | 결과 |
+| --- | --- |
+| `/`, `/area/gunpo` | 200, H1 1개, `lang="ko"`, 오류 화면 없음 |
+| 랜딩 `/dangjin12`·`/zxcasd1`·`/turtleboy`·`/incheon-guwol-drain-service-copy` | 200, 로고·대표 사진(`/_next/image`) 200 image/png |
+| sitemap.xml·robots.txt·llms.txt | 200, sitemap 1,111개·중복 0 |
+| `/login` / `/admin`·`/admin/queue`·`/admin/pages`(`?search=` 포함) | 200 / 307 → `/login` |
+| 관리자 화면 쿼리(authenticated 역할, 롤백 트랜잭션) | 체크 테이블 조회 0행 정상, 오늘(KST) 공개 50개, 3칸 ilike 검색 동작 |
+
+- 로그인한 관리자 화면은 계정이 없어 Claude가 열어보지 않음 → 사용자 확인 필요. 체크·업체명 변경은 운영 데이터를 바꾸므로 Claude가 누르지 않음
+- 되돌리기: Vercel에서 `dpl_5SPe4Md9ChMBCp4gnmMab9v5PAkt`로 promote. 018은 테이블만 추가라 이전 코드와 함께 동작(필요하면 `supabase/rollback/018_down.sql`, 체크 기록이 지워짐)
+- 업체명을 잘못 바꿨을 때: 이번 백업의 `db\data\landing_pages.json`·`landing_page_queue.json`에 배포 직전 업체명·updated_at이 있음
