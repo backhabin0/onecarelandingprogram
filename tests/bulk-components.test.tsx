@@ -287,23 +287,46 @@ describe("공개 대기열 화면", () => {
     expect(t).toContain("실패: HTTP 429");
   });
 
-  it("오늘 공개된 주소: 한 줄에 하나, 전체 복사, 날짜 선택(오늘까지)", () => {
+  it("오늘 공개된 주소: 한 줄씩 [체크] 주소 [URL 복사], 완료 수, 전체 복사, 날짜 선택(오늘까지)", () => {
     const html = renderToStaticMarkup(
       <PublishedUrlsPanel
         date="2026-10-23"
         today="2026-10-23"
-        urls={["https://onecare.example/a", "https://onecare.example/b"]}
+        items={[
+          { id: "11111111-1111-4111-8111-111111111111", url: "https://onecare.example/a", checked: true },
+          { id: "22222222-2222-4222-8222-222222222222", url: "https://onecare.example/b", checked: false },
+        ]}
         error={null}
         baseParams={{}}
       />
     );
     expect(text(html)).toMatch(/오늘 공개된 주소 2개/);
-    expect(html).toContain("https://onecare.example/a\nhttps://onecare.example/b");
+    expect(text(html)).toContain("1 / 2 수집요청 완료");
+    const rows = Array.from(html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)).map((m) => m[1]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatch(/type="checkbox"[^>]*checked=""/);
+    expect(rows[0]).toContain("https://onecare.example/a");
+    expect(rows[1]).not.toMatch(/checked=""/);
+    expect(rows[1]).toContain("https://onecare.example/b");
+    for (const row of rows) expect(text(row)).toContain("URL 복사");
     expect(html).toMatch(/id="publishedDate"[^>]*max="2026-10-23"[^>]*value="2026-10-23"/);
     expect(text(html)).toContain("전체 복사");
 
+    const withCheckError = renderToStaticMarkup(
+      <PublishedUrlsPanel
+        date="2026-10-23"
+        today="2026-10-23"
+        items={[{ id: "11111111-1111-4111-8111-111111111111", url: "https://onecare.example/a", checked: false }]}
+        error={null}
+        checkError="수집 요청 완료 표시를 불러오지 못했습니다."
+        baseParams={{}}
+      />
+    );
+    expect(text(withCheckError)).toContain("수집 요청 완료 표시를 불러오지 못했습니다.");
+    expect(text(withCheckError)).toContain("https://onecare.example/a");
+
     const past = renderToStaticMarkup(
-      <PublishedUrlsPanel date="2026-10-20" today="2026-10-23" urls={[]} error={null} baseParams={{}} />
+      <PublishedUrlsPanel date="2026-10-20" today="2026-10-23" items={[]} error={null} baseParams={{}} />
     );
     expect(text(past)).toContain("2026-10-20 공개된 주소");
     expect(text(past)).toContain("이 날 공개된 페이지가 없습니다.");

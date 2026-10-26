@@ -8,6 +8,8 @@ import QueueTable from "@/components/admin/QueueTable";
 import PublishedUrlsPanel from "@/components/admin/PublishedUrlsPanel";
 import { isValidDateString, kstDateOf } from "@/lib/kst-date";
 import { getPublishedUrlsForDate } from "@/lib/local-pages";
+import { getCheckedLandingPageIds } from "@/lib/search-submission-checks";
+import { getSiteProfile } from "@/lib/site-profile";
 import {
   QUEUE_PAGE_SIZE,
   getQueuePage,
@@ -35,11 +37,13 @@ export default async function AdminQueuePage({ searchParams }: AdminQueuePagePro
       ? params.publishedDate
       : today;
 
-  const [{ data: items, count, error }, { data: counts, error: countsError }, published] = await Promise.all([
+  const [{ data: items, count, error }, { data: counts, error: countsError }, published, siteProfile] = await Promise.all([
     getQueuePage({ state, search, page }),
     getQueueStateCounts(),
     getPublishedUrlsForDate(publishedDate),
+    getSiteProfile(),
   ]);
+  const checks = await getCheckedLandingPageIds(published.data.map((row) => row.id));
 
   const totalPages = Math.max(1, Math.ceil(count / QUEUE_PAGE_SIZE));
   const baseParams: Record<string, string> = {};
@@ -68,10 +72,12 @@ export default async function AdminQueuePage({ searchParams }: AdminQueuePagePro
       </Card>
 
       <PublishedUrlsPanel
+        key={publishedDate}
         date={publishedDate}
         today={today}
-        urls={published.data.map((row) => row.url)}
+        items={published.data.map((row) => ({ id: row.id, url: row.url, checked: checks.data.has(row.id) }))}
         error={published.error}
+        checkError={checks.error}
         baseParams={baseParams}
       />
 
@@ -81,7 +87,15 @@ export default async function AdminQueuePage({ searchParams }: AdminQueuePagePro
         </div>
       ) : (
         <Card className="mt-4">
-          <QueueTable items={items} isFiltered={Boolean(search || state !== "all")} />
+          <QueueTable
+            key={`${state}|${search}|${page}`}
+            items={items}
+            isFiltered={Boolean(search || state !== "all")}
+            state={state}
+            search={search}
+            totalCount={count}
+            siteBusinessName={siteProfile.businessName}
+          />
           {count > 0 ? (
             <Pagination page={page} totalPages={totalPages} baseParams={baseParams} basePath="/admin/queue" />
           ) : null}

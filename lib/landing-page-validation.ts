@@ -286,6 +286,26 @@ export function validateDuplicateLandingPageInput(input: DuplicateLandingPageFie
 }
 
 // ============================================================
+// 업체명 일괄 변경(랜딩페이지 목록·공개 대기열)
+// ============================================================
+
+/** 업체명 일괄 변경 요청 1번에 바꾸는 최대 항목 수. 화면은 이 크기로 나눠 순서대로 보낸다. */
+export const BUSINESS_NAME_RENAME_CHUNK_SIZE = 100;
+
+/**
+ * 일괄 변경할 새 업체명 검사. 생성·수정과 같은 규칙(필수, 앞뒤 공백 제거 후 100자 이내)이며
+ * 글자 수 오류 문구도 같다. 업체명 말고는 검사할 칸이 없어 필수 문구만 업체명 하나로 줄였다.
+ */
+export function validateBusinessNameInput(input: string): { value: string; error?: string } {
+  const value = input.trim();
+  if (!value) return { value, error: "업체명은 필수 입력값입니다." };
+  if (value.length > LANDING_PAGE_MAX_LENGTH.businessName) {
+    return { value, error: `업체명은 ${LANDING_PAGE_MAX_LENGTH.businessName}자 이내로 입력해주세요.` };
+  }
+  return { value };
+}
+
+// ============================================================
 // SEO 설정
 // ============================================================
 

@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-25 (feature/seo-geo: 공개 홈·llms.txt·구조화 데이터 정리, 운영 미배포)
+마지막 업데이트: 2026-10-26 (feature/admin-tweaks: 공개 주소 수집 요청 체크(018)·업체명 일괄 변경, 운영 미적용·미배포)
 
 ## 배경
 
@@ -722,3 +722,114 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 백업 파일(version 3)에 `site_profile`은 아직 들어 있지 않음(4칸이라 복구 후 다시 입력하면 됨) — 필요하면 version 4로
 - 기존 1,047개의 업체명 칸은 대부분 제목형 문구라 구조화 데이터 `name`도 그 문구 그대로 나감 — 관리자 화면에서 업체명을 실제 상호로 고치면 해결(코드로 추측해서 바꾸지 않음)
 - 이미 공개된 FAQ 평서문 8개(대기열 10개 페이지)는 그대로 — 고치려면 관리자 화면 FAQ에서 질문 문장으로 수정
+
+## 2026-10-25 운영 작업 기록
+
+### 운영 DB 데이터 수정(사용자 승인 후, 각각 한 트랜잭션)
+
+| 작업 | 대상 | 결과 | 백업·되돌리기 |
+| --- | --- | --- | --- |
+| 업체명 정리 | 전화 숫자 `01020688782`인 랜딩 1,033개 중 이미 '원케어배관'인 1개를 뺀 1,032개 | `business_name` → '원케어배관'(다른 업종 0개라 제외 없음). `updated_at`은 트리거가 갱신(사용자 선택). 다른 번호 그룹·다른 칸 해시 비교로 변경 없음 확인 | `C:\Users\user\Documents\onecare-backup\2026-10-25_business-name\` — `backup.json`, `update.sql`, `rollback.sql`(업체명 + 원래 updated_at 복원) |
+| 대기열 10개 전화번호 | `published_at` 있는 10개(모두 phone 비어 있었음) | `phone` → '010-2068-8782'. 전화 버튼·Organization telephone·자동 FAQ "전화 상담은…" 생김 | `C:\Users\user\Documents\onecare-backup\2026-10-25_queue10-phone\` — 같은 구성 |
+
+### PR #2 배포
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | 운영 DB 백업(SELECT만) | `C:\Users\user\Documents\onecare-backup\2026-10-25_1938_pre-pr2\` — 11개 테이블 전부 DB 행 수 = 저장 행 수(landing_pages 1,057, events 592, faqs 42, seo 16, 상담 7, queue 10, indexnow 10·1, publish_runs 1, 설정 2) + `schema.json`(칸 116·제약 61·인덱스 26·트리거 12·함수 7·정책 29·확장 6·버킷 1·cron 1) |
+| 2 | migration 017 | 사전 점검(없음) → 원본에 `begin;`/`commit;`만 붙여 실행 ✅. `site_profile` 1행(전부 빈 값)·RLS·정책 3개(authenticated 조회·수정, anon 조회). 사이트(main 코드) 정상 |
+| 3 | 배포 전 운영 | **`dpl_26sZGXgMipT3h8BqtphNzbZ6vPRi`**(PR #1, 10-23) ← 되돌리기용 |
+| 3 | 머지 | 사용자 "머지해" → PR #2 merge commit **`a8228cf`**(미리보기 빌드 성공·충돌 없음 확인 후) → 자동 배포 **`dpl_5SPe4Md9ChMBCp4gnmMab9v5PAkt`** READY(10-25 19:55 KST) |
+| 4 | 배포 후 확인(GET) | 아래 표 — 모두 정상 |
+
+| 확인 | 결과 |
+| --- | --- |
+| `/` | 200 공개 홈, `lang="ko"`, index/follow, H1 1개, 서비스 4개(누수탐지·배관청소·정화조막힘·하수구뚫음)·허브 3개 링크, `/admin`·`/login` 링크 없음. 대표 업체 미입력이라 WebSite JSON-LD만(이름 = 도메인) — 설계대로 |
+| `/admin`, `/admin/settings` | 307 → `/login`, `/login` 200 |
+| robots.txt | `Allow: / /area/ /llms.txt`, `Disallow: /admin /login /api`, Sitemap 줄 |
+| `/llms.txt` | 200 `text/plain; charset=utf-8`, 서비스 4·허브 3, 문의는 "상담 신청 양식"만(대표 업체 미입력) |
+| sitemap.xml | **1,061개 = 랜딩 1,057 + 허브 3 + 홈 1**, 중복 0. 첫 항목 홈, lastmod 2026-10-25T10:14:01Z(대기열 10개 전화번호 수정 시각) |
+| 랜딩 3개 | 대기열 페이지(`gunpo-sanbon-leak-detection`): LocalBusiness·areaServed "군포시 산본동"(중복 해소)·전화, 경로 "홈 › 군포시 › …". 기존 페이지(`onecareplumb`): 엉터리 주소 빠지고 Organization. 다른 업종(`siheung-jeongwangdong-window-cleaning-0002`): 제목형 업체명의 "…은 어떤 곳인가요?" FAQ 빠짐. 3개 모두 화면 FAQ = FAQPage, BreadcrumbList = 화면 경로 |
+| `/area/gunpo` | 200, H1 1개, 경로 "홈 › 군포시", ItemList 5개 + BreadcrumbList |
+
+- 되돌리기: Vercel에서 `dpl_26sZGXgMipT3h8BqtphNzbZ6vPRi`로 promote(또는 `vercel rollback`). 017은 테이블만 추가라 이전 코드와 함께 동작(필요하면 `supabase/rollback/017_down.sql`)
+- 대표 업체(`site_profile`)는 **사용자가 관리자 설정에서 직접 입력**하기로 함(SQL로 넣지 않음). 입력하면 홈에 업체 소개·연락처·LocalBusiness가 생기고, 업체명이 '원케어배관'이면 랜딩 1,043개가 홈과 같은 업체(`/#business`)로 묶인다
+
+## 2026-10-26 운영 Storage 중복 사진 정리 ✅ (코드 변경 없음, 사용자 단계별 승인)
+
+무료 플랜 Storage 1GB 한도를 넘어(버킷 `landing-page-assets` 2,071개·3,463.6MB) 같은 사진 사본을 정리했다. 압축·리사이즈는 하지 않음(사진 기능 작업 때 함께).
+
+### 원인
+
+- 같은 PNG 24장이 페이지마다 새 경로(`landing-pages/{id}/logo-…|main-…`)로 다시 올라가 1,000번 넘게 복사돼 있었음(09-09 ~ 10-22 업로드). 같은 사진이 어떤 페이지에선 로고, 어떤 페이지에선 메인으로 쓰이기도 함
+- 앱은 이미지 교체·삭제 때 다른 행이 같은 주소를 쓰면 파일을 지우지 않으므로(`removeLandingPageImageByUrl`), 여러 페이지가 파일 하나를 함께 써도 안전함
+
+### 순서와 결과
+
+| 단계 | 내용 | 결과 |
+| --- | --- | --- |
+| 1 중복 확인(읽기만) | 크기 + eTag(단일 업로드 MD5)로 묶음 | 고유 24묶음(크기 같고 eTag 다른 경우·반대 경우 0). DB 전체(public·auth·cron 38개 테이블의 글자·JSON·배열 칸)에서 이 버킷 주소를 쓰는 칸은 `landing_pages.logo_url`(1,040)·`main_image_url`(1,039)·`landing_page_seo_settings.og_image_url`(1)뿐. 대기열·site_profile 0. 깨진 주소 0 |
+| 2 백업 | DB 전체 + 고유 파일 24개 + 대응표 | 12개 테이블 행 수 일치(landing_pages 1,107 등), 파일 24개 크기·MD5 = eTag, SHA-256 24개 모두 다름 |
+| 3 주소 바꾸기 | 묶음마다 가장 먼저 올린 파일을 남김(새로 올리지 않음). 한 트랜잭션에서 updated_at 트리거 2개를 잠시 끄고 바꾼 뒤 다시 켬 | 로고 1,022·메인 1,031·og 1행(랜딩 1,037개). 실행 후 서로 다른 주소 24개, 없는 파일 0, `updated_at` 최신값 그대로(`2026-10-26 00:00:00.187Z`), 트리거 켜짐 |
+| 4 파일 삭제 | DB 어디에서도 안 쓰는 파일만 Storage API `remove`로 100개씩(묶음마다 참조 재확인). service_role 키는 CLI로 받아 메모리에서만 사용(저장·출력 안 함) | 2,047개 삭제(21묶음, 실패 0). **버킷 24개·44,335,299B(약 44.3MB)** |
+
+- 확인(GET): `dangjin12`(og 바뀐 페이지), `zxcasd1`, `incheon-guwol-drain-service-copy`(307개 묶음), `qwe12345`, `turtleboy`(템플릿 B) — 3단계 후·4단계 후 모두 og:image·JSON-LD image/logo·화면 로고/대표 이미지 200, 남긴 파일을 가리킴
+
+### 백업·되돌리기
+
+`C:\Users\user\Documents\onecare-backup\2026-10-26_storage-dedup\`
+- `db\`(테이블 JSON·`storage.objects` 메타데이터·schema·counts), `files\`(고유 24개, 파일 이름 = 경로의 `/`를 `__`로), `mapping.csv`(원래 경로 → 남긴 경로, 2,071줄), `delete-list.csv`·`delete-log.csv`(2,047개), `update.sql`·`rollback.sql`·`preview.sql`, `scripts\`
+- 되돌리기: `files\`의 파일을 `mapping.csv`의 원래 경로로 다시 올린 뒤 `rollback.sql`(1,038행, updated_at 유지). 되돌리면 다시 3.4GB가 됨
+
+### 다음 사진 작업 때 할 것
+
+- 업로드 전 압축·리사이즈, 같은 파일은 해시로 한 번만 저장(사진 보관함) — 그렇지 않으면 같은 문제가 다시 생김
+- 결정(사용자, 2026-10-26): 업체명은 대표 업체명과 **같을 때만** 홈 업체로 묶음(현행 유지). 오늘 공개 주소 체크박스에서 '전체 복사'는 체크하지 않음(체크 상태 저장 위치는 DB 추천, 아직 미결정)
+
+## 관리자 화면 손질 — `feature/admin-tweaks` (2026-10-26, 운영 DB 접속 없음·migration 미적용·배포 안 함)
+
+`main`(a8228cf)에서 새 브랜치. main에는 10-25 운영 기록 커밋(62c9bd1)이 없어서 HANDOFF.md는 그 기록과 위 Storage 정리 기록을 포함한 파일을 그대로 가져옴.
+
+### 1. 오늘 공개된 주소 — 수집 요청 완료 체크(DB 저장)
+
+- 공개 대기열 화면 '공개된 주소' 카드: 주소 상자(textarea) 대신 한 줄씩 `[체크] 주소 [URL 복사]`. 'URL 복사'에 성공하면 자동 체크, 직접 체크·해제 가능, "n / 전체 수집요청 완료" 표시. 위쪽 '전체 복사'는 그대로이고 눌러도 체크하지 않음(사용자 결정)
+- 체크는 화면에 먼저 반영하고 저장. 저장 실패(권한·네트워크·페이지 삭제)면 체크를 되돌리고 안내 문구. 저장 중인 줄은 체크칸 잠금. 날짜를 바꾸면 카드를 새로 그림(`key`)
+- migration **018** `search_submission_checks`(`landing_page_id` PK·FK `on delete cascade`, `checked_at`, `checked_by default auth.uid()`). RLS: authenticated 조회·추가·삭제만, anon 정책 없음. 되돌리기 `supabase/rollback/018_down.sql`
+- 018 적용 전에 코드가 나가도: 주소 목록은 보이고 "수집 요청 완료 표시를 불러오지 못했습니다." 안내, 체크 저장만 실패
+- 백업 파일(version 3)에는 이 테이블이 들어가지 않음(site_profile과 같음 — 필요하면 version 4)
+
+### 2. 업체명 일괄 변경
+
+- **랜딩페이지 관리**: 검색(업체명·제목·URL, `?search=`, 페이지 이동에도 유지), 줄마다 체크박스 + "이 페이지 전체 선택". 한 페이지(50개)를 다 고르면 "검색 결과(또는 전체 페이지) N개 모두 선택"(1,000개 넘어도 1,000행씩 끝까지 읽음)
+- **공개 대기열**: 기존 선택 체크박스에 같은 기능. 공개된 항목은 고를 수 없고 바꾸지 않음(공개된 페이지는 랜딩페이지 관리에서). 다른 페이지 항목까지 고른 상태에서는 기존 '보류 → 공개 대기'·'삭제'를 막음(그 둘은 지금처럼 이 페이지 50개 기준)
+- 바꾸기: "선택한 n개 업체명 바꾸기 [새 업체명] [업체명 바꾸기]" → 확인 창 `n개 페이지를 "A", "B" 외 k개 → "새 이름"으로 바꿉니다.`(로/으로 자동) → **100개씩** 순서대로 전송. 중간 실패면 멈추고 "n개 중 m개까지 처리" 안내
+- 서버(`renameLandingPagesAction`·`renameQueueItemsAction`)가 다시 검사: id 1~100개·uuid, 업체명 필수·앞뒤 공백 제거 후 100자(`validateBusinessNameInput`, 글자 수 문구는 생성·수정과 같음)
+- 이미 같은 이름인 행은 건드리지 않음(`neq`) → 그 페이지의 `updated_at`(sitemap lastmod)은 그대로. 바뀐 페이지는 트리거가 `updated_at` 갱신
+- 홈 대표 업체 묶기 규칙은 그대로(이름이 똑같을 때만). 막대 아래에 지금 대표 업체명과 이 규칙을 안내
+- 캐시 갱신: `/admin/pages`, `/admin`, 바뀐 페이지 `/{slug}`, `/area/[citySlug]`(page), 대기열은 `/admin/queue`
+
+### 바뀐 파일
+
+| 파일 | 내용 |
+| --- | --- |
+| `supabase/migrations/018_search_submission_checks.sql`, `supabase/rollback/018_down.sql` (신규) | 체크 테이블·RLS / 되돌리기 |
+| `lib/search-submission-checks.ts` (신규) | 체크 조회(100개씩 `.in()`)·저장(중복 23505 = 성공, FK 23503 = "페이지를 찾을 수 없습니다") |
+| `lib/local-pages.ts` | `getPublishedUrlsForDate` 결과에 `id` 추가 |
+| `components/admin/PublishedUrlsPanel.tsx`, `app/admin/queue/page.tsx` | 줄 목록·체크·완료 수 / 체크 상태·대표 업체명 전달 |
+| `lib/search-term.ts` (신규), `lib/publish-queue.ts` | 검색어 정리·`.or()` 필터 공용화(대기열 검색 동작 같음) / 대기열 일괄 변경 대상 조회·업체명 변경 |
+| `lib/landing-pages.ts` | `getLandingPagesPage(page, search)`, `getLandingPageRenameTargets`, `renameLandingPages` |
+| `lib/landing-page-validation.ts`, `lib/business-info.ts`, `lib/business-name-rename.ts` (신규) | `validateBusinessNameInput`·`BUSINESS_NAME_RENAME_CHUNK_SIZE` / `withDirectionParticle` / 나누기·확인 문구 |
+| `app/admin/pages/actions.ts`, `app/admin/queue/actions.ts` | 일괄 변경·전체 선택·체크 저장 Server Action |
+| `components/admin/{BusinessNameRenameBar,SelectAllResultsNotice,PageSearchForm}.tsx` (신규), `PageTable.tsx`, `QueueTable.tsx`, `app/admin/pages/page.tsx` | 화면 |
+| `tests/admin-tweaks.db.test.tsx` (신규), `tests/bulk-components.test.tsx` | 테스트 24개 / 공개 주소 카드 테스트를 새 화면에 맞춤 |
+
+### 검증
+
+- `npm test` ✅ 23개 파일, **548개**(기존 524 + 신규 24). PGlite(migration 001~018): 018 권한(anon 차단)·기본값·cascade·두 번 적용·되돌리기, 체크 저장/재체크/해제·250개 조회·잘못된 입력·anon 저장 실패·테이블 없음, 대기열 화면에 DB 체크 상태·"1 / 2 수집요청 완료", 업체명 검사 경계(100/101자)·100개씩 나누기·확인 문구·조사, 선택한 행만·같은 이름은 updated_at 유지, 서버 재검사(빈 값·101자·id 0/101개·uuid 아님), 검색 3칸·1,201개 전체 선택, 1,200개를 100개씩 바꾸기, 대표 업체 묶기(“원케어배관 산본점”은 안 묶이고 “원케어배관”은 묶임), 대기열 공개 항목 제외·상태/검색 조건 전체 선택(1,100개), 화면 정적 렌더링(기존 칸·버튼 유지)
+- `npx tsc --noEmit` ✅ / `npx eslint .` ✅ / `npx next build` ✅(빌드 로그 "Dynamic server usage"는 기존과 같음)
+- 브라우저 클릭(복사·체크·확인 창)은 자동 테스트하지 않음 → 미리보기 배포에서 확인. 미리보기도 운영 DB를 쓰므로 018 적용 전이면 체크 저장은 실패(안내 문구)하고, **업체명 바꾸기는 운영 데이터가 실제로 바뀜** — 미리보기에서 시험할 때 주의
+
+### 배포할 때(사용자 승인 후)
+
+1. 운영 DB 백업 → 018 적용(`begin;`/`commit;` 한 트랜잭션, 테이블 추가만이라 지금 코드와도 함께 동작)
+2. 머지 → 자동 배포 → `/admin/queue` 체크·URL 복사, `/admin/pages` 검색·선택·업체명 바꾸기(시험용 페이지 1개로) 확인
