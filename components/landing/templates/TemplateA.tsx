@@ -9,7 +9,13 @@ import CTASection from "@/components/landing/CTASection";
 import ConsultationForm from "@/components/landing/ConsultationForm";
 import FAQSection from "@/components/landing/FAQSection";
 import LandingFooter from "@/components/landing/LandingFooter";
-import { Breadcrumbs, CaseStudySection, RelatedLinksSection } from "@/components/landing/LocalSeoSections";
+import {
+  Breadcrumbs,
+  CaseStudySection,
+  PhotoGallerySection,
+  RelatedLinksSection,
+} from "@/components/landing/LocalSeoSections";
+import type { LandingPhoto } from "@/lib/landing-photos";
 
 interface TemplateAProps {
   landingPage: LandingPage;
@@ -24,6 +30,10 @@ interface TemplateAProps {
   related: RelatedLinks | null;
   /** true면 Analytics 기록/상담 제출을 막는다(관리자 미리보기). 시각적 레이아웃은 동일하다. */
   preview?: boolean;
+  /** 019: 헤더 로고(페이지 로고 → 같은 업체면 대표 업체 로고) */
+  logoUrl?: string | null;
+  /** 019: 본문 사진 갤러리(사진 2·3) */
+  gallery?: LandingPhoto[];
 }
 
 /**
@@ -38,12 +48,14 @@ export default function TemplateA({
   breadcrumbs,
   related,
   preview = false,
+  logoUrl = landingPage.logo_url,
+  gallery = [],
 }: TemplateAProps) {
   return (
     <div className="flex min-h-screen flex-col bg-white">
       <LandingHeader
         businessName={landingPage.business_name}
-        logoUrl={landingPage.logo_url}
+        logoUrl={logoUrl}
       />
       <main className="flex-1">
         <Breadcrumbs items={breadcrumbs} />
@@ -59,6 +71,7 @@ export default function TemplateA({
         />
         <IntroSection description={landingPage.description} />
         <CaseStudySection caseStudy={landingPage.case_study} />
+        <PhotoGallerySection photos={gallery} />
         <BusinessInfoSection
           businessName={landingPage.business_name}
           address={landingPage.address}

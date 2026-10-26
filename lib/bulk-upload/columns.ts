@@ -29,6 +29,10 @@ export type BulkUploadField =
   | "mainImageUrl"
   | "mainImageAlt"
   | "caseStudy"
+  | "image2Url"
+  | "image2Alt"
+  | "image3Url"
+  | "image3Alt"
   | "slug";
 
 export interface BulkUploadColumn {
@@ -84,6 +88,26 @@ export const BULK_UPLOAD_COLUMNS: readonly BulkUploadColumn[] = [
   { field: "mainImageUrl", header: "대표 사진 URL", example: "", width: 30 },
   { field: "mainImageAlt", header: "사진 설명(alt)", example: "", width: 24 },
   { field: "caseStudy", header: "현장 사례", example: "", width: 40 },
+  // 사진 기능(019)에서 추가한 칸. 역시 맨 뒤에 둬서 예전 양식·붙여넣기 순서가 그대로 읽힌다.
+  // 사진 칸(대표 사진 URL·사진2·사진3)에는 사진 보관함 이름 또는 http(s) 주소를 쓴다.
+  { field: "image2Url", header: "사진2", example: "", width: 24 },
+  { field: "image2Alt", header: "사진2 설명", example: "", width: 24 },
+  { field: "image3Url", header: "사진3", example: "", width: 24 },
+  { field: "image3Alt", header: "사진3 설명", example: "", width: 24 },
+];
+
+/** 사진 칸(보관함 이름 또는 주소)과 그 설명 칸 — 사진1 = 대표 사진 */
+export const PHOTO_UPLOAD_FIELDS: readonly {
+  url: BulkUploadField;
+  alt: BulkUploadField;
+  label: string;
+  /** 오류 문구 주어(대표 사진은 예전 문구 그대로) */
+  urlSubject: string;
+  altSubject: string;
+}[] = [
+  { url: "mainImageUrl", alt: "mainImageAlt", label: "대표 사진", urlSubject: "대표 사진 URL은", altSubject: "사진 설명(alt)은" },
+  { url: "image2Url", alt: "image2Alt", label: "사진2", urlSubject: "사진2 주소는", altSubject: "사진2 설명은" },
+  { url: "image3Url", alt: "image3Alt", label: "사진3", urlSubject: "사진3 주소는", altSubject: "사진3 설명은" },
 ];
 
 /** 손님이 직접 채우는 칸(프롬프트 만들기에서 AI가 채우지 않고 빈칸으로 둠) */
@@ -93,6 +117,10 @@ export const CUSTOMER_ONLY_FIELDS: readonly BulkUploadField[] = [
   "mainImageUrl",
   "mainImageAlt",
   "caseStudy",
+  "image2Url",
+  "image2Alt",
+  "image3Url",
+  "image3Alt",
 ];
 
 /**

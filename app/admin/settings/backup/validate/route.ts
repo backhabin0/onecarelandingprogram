@@ -110,6 +110,11 @@ export async function POST(request: NextRequest) {
         unlinkedCount: plan.publishQueue.unlinkedCount,
       },
       siteVerification: plan.siteVerification,
+      siteProfile: plan.siteProfile,
+      mediaAssets: {
+        toInsertCount: plan.mediaAssets.rowsToInsert.length,
+        skipExistingCount: plan.mediaAssets.skipExistingCount,
+      },
     },
   });
 }

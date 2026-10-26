@@ -1,6 +1,7 @@
 import { BLOCKED_SLUG_PREFIX_MESSAGE, isReservedSlug, RESERVED_SLUGS } from "@/lib/slug";
 import type {
   CreateLandingPageInput,
+  LandingPagePhotosInput,
   LandingPageStatus,
   UpdateLandingPageInput,
 } from "@/types/landing-page";
@@ -122,7 +123,10 @@ export type ValidationIssueCode =
   | "contains_price"
   | "keyword_overuse"
   | "thin_page"
-  | "faq_not_question";
+  | "faq_not_question"
+  // 019: 사진 칸에 쓴 보관함 이름을 못 찾음 / 같은 이름이 여러 장
+  | "photo_not_found"
+  | "photo_ambiguous";
 
 export interface ValidationIssue {
   code: ValidationIssueCode;
@@ -303,6 +307,78 @@ export function validateBusinessNameInput(input: string): { value: string; error
     return { value, error: `업체명은 ${LANDING_PAGE_MAX_LENGTH.businessName}자 이내로 입력해주세요.` };
   }
   return { value };
+}
+
+// ============================================================
+// 페이지 사진·로고(019)
+// ============================================================
+
+/** landing_pages 사진·로고 칸에 저장할 값(빈 칸은 null) */
+export interface NormalizedLandingPagePhotos {
+  logo_url: string | null;
+  main_image_url: string | null;
+  main_image_alt: string | null;
+  image_2_url: string | null;
+  image_2_alt: string | null;
+  image_3_url: string | null;
+  image_3_alt: string | null;
+}
+
+const PHOTO_URL_FIELDS: [keyof LandingPagePhotosInput, string][] = [
+  ["logoUrl", "로고"],
+  ["mainImageUrl", "사진1"],
+  ["image2Url", "사진2"],
+  ["image3Url", "사진3"],
+];
+const PHOTO_ALT_FIELDS: [keyof LandingPagePhotosInput, string][] = [
+  ["mainImageAlt", "사진1 설명은"],
+  ["image2Alt", "사진2 설명은"],
+  ["image3Alt", "사진3 설명은"],
+];
+
+/**
+ * 페이지 사진·로고 입력 검사: 주소는 비우거나 http(s) 500자 이내, 설명은 200자 이내.
+ * 서버(Server Action)가 브라우저 값을 믿지 않고 다시 부른다.
+ */
+export function validateLandingPagePhotosInput(input: unknown): {
+  normalized: NormalizedLandingPagePhotos | null;
+  error?: string;
+} {
+  if (typeof input !== "object" || input === null) return { normalized: null, error: "잘못된 요청입니다." };
+  const record = input as Record<string, unknown>;
+  const value = (key: keyof LandingPagePhotosInput) => {
+    const raw = record[key];
+    return typeof raw === "string" ? raw.trim() : raw === undefined || raw === null ? "" : null;
+  };
+  for (const [key] of [...PHOTO_URL_FIELDS, ...PHOTO_ALT_FIELDS]) {
+    if (value(key) === null) return { normalized: null, error: "잘못된 요청입니다." };
+  }
+  for (const [key, label] of PHOTO_URL_FIELDS) {
+    const url = value(key) as string;
+    if (url.length > LOCAL_SEO_MAX_LENGTH.mainImageUrl) {
+      return { normalized: null, error: `${label} 주소는 ${LOCAL_SEO_MAX_LENGTH.mainImageUrl}자 이내여야 합니다.` };
+    }
+    if (url && !isSafeExternalUrl(url)) {
+      return { normalized: null, error: `${label} 주소는 http:// 또는 https://로 시작해야 합니다.` };
+    }
+  }
+  for (const [key, subject] of PHOTO_ALT_FIELDS) {
+    if ((value(key) as string).length > LOCAL_SEO_MAX_LENGTH.mainImageAlt) {
+      return { normalized: null, error: `${subject} ${LOCAL_SEO_MAX_LENGTH.mainImageAlt}자 이내로 입력해주세요.` };
+    }
+  }
+  const orNull = (key: keyof LandingPagePhotosInput) => (value(key) as string) || null;
+  return {
+    normalized: {
+      logo_url: orNull("logoUrl"),
+      main_image_url: orNull("mainImageUrl"),
+      main_image_alt: orNull("mainImageAlt"),
+      image_2_url: orNull("image2Url"),
+      image_2_alt: orNull("image2Alt"),
+      image_3_url: orNull("image3Url"),
+      image_3_alt: orNull("image3Alt"),
+    },
+  };
 }
 
 // ============================================================

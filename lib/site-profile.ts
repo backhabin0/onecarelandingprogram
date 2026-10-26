@@ -26,6 +26,8 @@ export interface SiteProfile {
   description: string | null;
   phone: string | null;
   kakaoUrl: string | null;
+  /** 019: 대표 업체 로고(사진 보관함 주소). 페이지 로고가 비어 있고 업체명이 같은 페이지도 이 로고를 쓴다 */
+  logoUrl: string | null;
   updatedAt: string | null;
 }
 
@@ -34,6 +36,7 @@ export const EMPTY_SITE_PROFILE: SiteProfile = {
   description: null,
   phone: null,
   kakaoUrl: null,
+  logoUrl: null,
   updatedAt: null,
 };
 
@@ -42,6 +45,8 @@ interface SiteProfileRow {
   description: string | null;
   phone: string | null;
   kakao_url: string | null;
+  /** 019 적용 전에는 칸이 없다 */
+  logo_url?: string | null;
   updated_at: string | null;
 }
 
@@ -55,7 +60,8 @@ async function fetchSiteProfile(): Promise<SiteProfile> {
     const supabase = await getSupabaseServerClient();
     const { data, error } = await supabase
       .from("site_profile")
-      .select("business_name, description, phone, kakao_url, updated_at")
+      // 019(logo_url) 적용 전에도 조회가 실패하지 않도록 칸 이름을 나열하지 않는다.
+      .select("*")
       .eq("id", PROFILE_ID)
       .maybeSingle();
 
@@ -71,6 +77,7 @@ async function fetchSiteProfile(): Promise<SiteProfile> {
       description: orNull(row.description),
       phone: orNull(row.phone),
       kakaoUrl: orNull(row.kakao_url),
+      logoUrl: orNull(row.logo_url),
       updatedAt: row.updated_at ?? null,
     };
   } catch (err) {
@@ -82,6 +89,9 @@ async function fetchSiteProfile(): Promise<SiteProfile> {
 /** 같은 요청 안에서 홈 metadata + 본문이 함께 불러도 DB 조회는 한 번만 한다. */
 export const getSiteProfile = cache(fetchSiteProfile);
 
+/** 글자 칸(로고는 따로 저장: updateSiteProfileLogo) */
+export type SiteProfileTextValues = Omit<SiteProfile, "updatedAt" | "logoUrl">;
+
 export interface SiteProfileInput {
   businessName: string;
   description: string;
@@ -90,7 +100,7 @@ export interface SiteProfileInput {
 }
 
 export type SanitizeSiteProfileResult =
-  | { ok: true; value: Omit<SiteProfile, "updatedAt"> }
+  | { ok: true; value: SiteProfileTextValues }
   | { ok: false; error: string };
 
 /** 관리자 입력 검사: 앞뒤 공백 제거, 빈 값은 null, 글자 수·줄바꿈·카카오 URL 형식 */
@@ -123,7 +133,7 @@ export function sanitizeSiteProfileInput(input: SiteProfileInput): SanitizeSiteP
 
 /** requireUser()로 인증을 확인한 Server Action에서만 호출한다. */
 export async function updateSiteProfile(
-  value: Omit<SiteProfile, "updatedAt">
+  value: SiteProfileTextValues
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = await getSupabaseServerClient();
@@ -146,5 +156,27 @@ export async function updateSiteProfile(
   } catch (err) {
     console.error("[site-profile] update client error:", err instanceof Error ? err.message : err);
     return { success: false, error: "대표 업체 정보를 저장하지 못했습니다." };
+  }
+}
+
+/**
+ * 019: 대표 업체 로고 저장(빈 값이면 null). 주소 형식은 호출하는 action이 검사한다.
+ * requireUser()로 인증을 확인한 Server Action에서만 호출한다.
+ */
+export async function updateSiteProfileLogo(logoUrl: string | null): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { error } = await supabase
+      .from("site_profile")
+      .update({ logo_url: logoUrl, updated_at: new Date().toISOString() })
+      .eq("id", PROFILE_ID);
+    if (error) {
+      console.error("[site-profile] update logo error:", error.message);
+      return { success: false, error: "대표 업체 로고를 저장하지 못했습니다." };
+    }
+    return { success: true };
+  } catch (err) {
+    console.error("[site-profile] update logo client error:", err instanceof Error ? err.message : err);
+    return { success: false, error: "대표 업체 로고를 저장하지 못했습니다." };
   }
 }

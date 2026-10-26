@@ -7,7 +7,13 @@ import CTAButtons from "@/components/landing/CTAButtons";
 import ConsultationForm from "@/components/landing/ConsultationForm";
 import FAQSection from "@/components/landing/FAQSection";
 import SafeImage from "@/components/landing/SafeImage";
-import { Breadcrumbs, CaseStudySection, RelatedLinksSection } from "@/components/landing/LocalSeoSections";
+import {
+  Breadcrumbs,
+  CaseStudySection,
+  PhotoGallerySection,
+  RelatedLinksSection,
+} from "@/components/landing/LocalSeoSections";
+import type { LandingPhoto } from "@/lib/landing-photos";
 import type { BreadcrumbItem, RelatedLinks } from "@/lib/local-seo";
 
 interface TemplateBProps {
@@ -23,6 +29,10 @@ interface TemplateBProps {
   related: RelatedLinks | null;
   /** true면 Analytics 기록/상담 제출을 막는다(관리자 미리보기). 시각적 레이아웃은 동일하다. */
   preview?: boolean;
+  /** 019: 헤더 로고(페이지 로고 → 같은 업체면 대표 업체 로고) */
+  logoUrl?: string | null;
+  /** 019: 본문 사진 갤러리(사진 2·3) */
+  gallery?: LandingPhoto[];
 }
 
 /**
@@ -38,6 +48,8 @@ export default function TemplateB({
   breadcrumbs,
   related,
   preview = false,
+  logoUrl = landingPage.logo_url,
+  gallery = [],
 }: TemplateBProps) {
   const {
     business_name: businessName,
@@ -46,7 +58,6 @@ export default function TemplateB({
     phone,
     kakao_url: kakaoUrl,
     address,
-    logo_url: logoUrl,
     main_image_url: mainImageUrl,
   } = landingPage;
 
@@ -110,6 +121,7 @@ export default function TemplateB({
         ) : null}
 
         <CaseStudySection caseStudy={landingPage.case_study} variant="dark" />
+        <PhotoGallerySection photos={gallery} variant="dark" />
 
         <BusinessInfoSection
           businessName={businessName}

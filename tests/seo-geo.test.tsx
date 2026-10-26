@@ -60,6 +60,10 @@ function page(overrides: Partial<LandingPage> = {}): LandingPage {
     city_slug: "gunpo",
     main_image_alt: null,
     case_study: null,
+    image_2_url: null,
+    image_2_alt: null,
+    image_3_url: null,
+    image_3_alt: null,
     created_at: "2026-10-23T12:38:38.461Z",
     updated_at: "2026-10-23T12:38:38.461Z",
     ...overrides,
@@ -94,6 +98,7 @@ const profile = (overrides: Partial<SiteProfile> = {}): SiteProfile => ({
   description: "누수탐지·배관청소·하수구 막힘을 점검합니다.",
   phone: "010-0000-0000",
   kakaoUrl: "https://open.kakao.com/o/site",
+  logoUrl: null,
   updatedAt: "2026-10-24T01:00:00.000Z",
   ...overrides,
 });

@@ -97,6 +97,11 @@ describe("행 검사", () => {
       main_image_url: "https://img.example/0.jpg",
       main_image_alt: null,
       case_study: null,
+      // 019: 사진 2·3(비어 있음)
+      image_2_url: null,
+      image_2_alt: null,
+      image_3_url: null,
+      image_3_alt: null,
       max_similarity: null,
     });
     expect(decideQueueState(result.rows[0], false)).toBe("ready");

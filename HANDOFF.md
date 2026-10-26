@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-26 (feature/admin-tweaks 운영 배포 완료: migration 018 적용·main `9a46d67`)
+마지막 업데이트: 2026-10-26 (feature/photos: 사진 보관함·페이지 사진 3장·로고·엑셀 사진 칸(019), 운영 미적용·미배포 / 그 전: admin-tweaks 배포 완료 main `9a46d67`)
 
 ## 배경
 
@@ -855,3 +855,80 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 로그인한 관리자 화면은 계정이 없어 Claude가 열어보지 않음 → 사용자 확인 필요. 체크·업체명 변경은 운영 데이터를 바꾸므로 Claude가 누르지 않음
 - 되돌리기: Vercel에서 `dpl_5SPe4Md9ChMBCp4gnmMab9v5PAkt`로 promote. 018은 테이블만 추가라 이전 코드와 함께 동작(필요하면 `supabase/rollback/018_down.sql`, 체크 기록이 지워짐)
 - 업체명을 잘못 바꿨을 때: 이번 백업의 `db\data\landing_pages.json`·`landing_page_queue.json`에 배포 직전 업체명·updated_at이 있음
+
+## 사진 기능 — `feature/photos` (2026-10-26, 운영 DB 읽기만·migration 019 미적용·배포 안 함)
+
+조사 때 계획대로 만들었다. 압축은 브라우저에서(새 라이브러리 없음), 같은 사진은 한 번만 저장.
+
+### 1. 사진 보관함(관리자 메뉴 "사진 보관함", `/admin/media`)
+
+- 여러 장 한꺼번에 올리기(사진/로고 선택) → 한 장씩 브라우저에서 줄여서 올림: 사진 긴 변 1600px WebP 0.8, 로고 512px WebP(투명 유지). WebP를 못 만드는 브라우저는 사진 JPEG·로고 PNG. 2MB 안에 들 때까지 품질을 0.7→0.6→0.5로 낮춤. 다시 그려서 위치(GPS) 정보도 빠짐
+- 같은 사진: **원본 파일의 sha256**으로 `library/{sha256}.webp` 한 곳에만 저장. 올리기 전에 같은 sha256이 있으면 업로드 없이 기존 사진을 씀("이미 있는 사진")
+- og:image용 1200×630 JPEG(가운데 채워 자름, 로고는 흰 바탕 가운데)를 `library/{sha256}-og.jpg`로 함께 저장 → 사진1이 보관함 사진이면 주소만 보고 OG 주소를 앎(칸 추가 없음)
+- HEIC/HEIF: 형식·확장자로 알아보고 "아이폰 설정 > 카메라 > 포맷 > 높은 호환성" 안내 후 거절
+- 등록: 브라우저가 Storage에 두 파일을 올린 뒤 서버가 Storage 목록으로 **두 파일이 있는지·2MB 이하인지 다시 확인**하고, 주소·경로는 서버가 sha256으로 만듦. 이름은 올린 파일 이름, 겹치면(대소문자 무시) "이름 (2).jpg"
+- 목록: 검색(이름)·종류(전체/사진/로고)·60장씩, 크기·해상도·"사용 중 n곳", 이름 복사, 삭제
+- 삭제: 쓰는 곳이 있으면(본 파일 또는 OG 파일 주소) 거절하고 어디서 쓰는지 알려 줌. 확인이 실패해도 지우지 않음. 목록 행을 먼저 지우고 파일 2개를 지움
+- 페이지에서 사진을 바꾸거나 페이지를 지워도 보관함 파일은 지우지 않음(예전 `landing-pages/` 파일만 쓰는 곳이 없을 때 정리)
+
+### 2. 페이지마다 사진 3장 + 로고
+
+- 사진1 = 기존 `main_image_url`/`main_image_alt` 그대로, 사진2·3 칸(`image_2_url`·`image_2_alt`·`image_3_url`·`image_3_alt`) 추가 — 페이지·대기열 모두
+- 페이지 만들기·수정 화면: "사진·로고" 칸(로고 + 사진1~3과 설명). 칸마다 "보관함에서 고르기 / 새로 올리기"(창 안에서 바로 올리면 그 사진이 골라짐)·비우기. 수정 화면은 "사진 저장" 버튼(또는 "수정하기"를 누르면 바뀐 사진도 함께 저장). **예전처럼 고르는 즉시 저장되지는 않음**
+- 대기열 수정 화면: 사진 칸 3개에 "보관함에서 고르기" 버튼(주소가 들어감), 사진2·3과 설명 칸 추가
+- 랜딩 화면: 사진1은 기존처럼 첫 화면, 사진2·3은 현장 사례 아래 "현장 사진" 갤러리(`<img alt>` + 설명). 설명이 비면 사진1 "지역 키워드 현장", 사진2·3은 뒤에 번호
+- 로고: 대표 업체(설정 > 사이트 대표 업체 > 대표 업체 로고, 고르면 바로 저장) 1개 + 페이지별. 페이지 로고가 비어 있으면 **업체명이 대표 업체와 같은 페이지만** 대표 로고(헤더·구조화 데이터 logo·og 대체)
+- og:image: 전용 OG(SEO 설정) → 사진1의 1200×630 JPEG(width/height 함께) → 사진1(보관함 밖 주소) → 로고(대표 로고 포함). SEO 설정의 전용 OG 올리기도 1200×630 JPEG로 줄임
+- 구조화 데이터: LocalBusiness/Organization `image` = 사진1~3 배열, `logo` = 위 로고 규칙. 홈 LocalBusiness에도 대표 로고
+
+### 3. 엑셀 대량 등록
+
+- 양식 맨 뒤에 "사진2, 사진2 설명, 사진3, 사진3 설명"(29칸). 머리글로 찾으므로 이전 25칸·20칸 양식, 머리글 없는 붙여넣기 순서도 그대로
+- 사진 칸(대표 사진 URL·사진2·사진3)에는 보관함 이름 또는 http(s) 주소. 이름은 대소문자 무시, 확장자 생략 가능(맞는 사진이 하나일 때). 저장할 때 주소로 바꿈
+- 없는 이름 → 오류 "사진2: 사진 보관함에 "x" 사진이 없습니다…"(그 행은 대기열에 안 들어감), 여러 장과 맞으면 오류, "/"가 든 값·http(s)가 아닌 주소는 예전 문구 그대로 형식 오류
+- 얇은 페이지 경고·공개 함수의 얇은 페이지 판단: 사진1~3 중 하나라도 있으면 사진 있음
+- `docs/samples` 양식·프롬프트 예시 다시 만듦(`npm run samples`. 프롬프트 예시에는 이전 브랜치에서 바뀐 FAQ 규칙 7번도 함께 반영됨)
+
+### 4. 삭제 안전장치
+
+- 참조 확인 목록 한 곳(`lib/storage/asset-references.ts` `IMAGE_REFERENCE_COLUMNS`): 페이지 로고·사진1~3, SEO OG, **공개 전** 대기열 사진1~3, 대표 업체 로고. 보관함 삭제와 예전 파일 정리(`removeLandingPageImageByUrl`)가 같은 목록을 씀
+- 테스트로 고정: DB의 `*image*url`·`*logo*url` 칸 전체와 목록이 같아야 통과(새 칸을 빠뜨리면 실패), 칸마다 삭제가 막히는지 하나씩 확인. 칸 하나를 일부러 빼면 3개 실패하는 것 확인 후 원복
+
+### 5. 백업 version 4
+
+- 랜딩페이지·대기열 사진2·3 칸, 대표 업체 정보(`siteProfile`, 로고 포함), 보관함 목록(`mediaAssets`, 파일 자체는 안 넣음), 파일 목록에 image2·image3
+- 복구: 사진 칸은 version 4 파일일 때만 씀(1~3 파일은 지금 값 유지), 대표 업체 정보 갱신, 보관함 목록은 id·sha256·이름이 겹치지 않는 것만 추가. 복구 화면에 두 줄 추가
+
+### migration 019 (`supabase/migrations/019_photo_library.sql`, 되돌리기 `supabase/rollback/019_down.sql`)
+
+- `media_assets` 테이블(sha256 unique, 이름 lower unique, 경로 형식·2MB check), RLS: authenticated 조회·추가·삭제, anon 없음
+- 칸 추가: landing_pages·landing_page_queue 사진2·3(주소 500자·설명 200자), site_profile.logo_url(500자)
+- Storage: 버킷 상한 10MB → **2MB**(이미 있는 파일엔 영향 없음), 업로드·교체 정책을 `library/`·`landing-pages/` 경로로 제한
+- `publish_queued_landing_pages`: 사진2·3 복사 + 얇은 페이지 판단(그 밖은 016과 같음)
+- 019_down: 016 공개 함수·005 정책·10MB로 되돌리고 칸·테이블 삭제(library/ 파일은 남음)
+
+### 바뀐 파일
+
+| 구분 | 파일 |
+| --- | --- |
+| migration | `supabase/migrations/019_photo_library.sql`, `supabase/rollback/019_down.sql` (신규) |
+| 보관함 | `lib/media/library.ts`·`compress.ts`·`upload-client.ts`, `lib/media-assets.ts`, `lib/storage/asset-references.ts`, `app/admin/media/page.tsx`·`actions.ts`, `components/admin/MediaLibraryPanel.tsx`·`MediaUploadInput.tsx`·`MediaPickerDialog.tsx`·`PhotoSlotField.tsx` (신규), `lib/storage/landing-page-assets.ts`(참조 확인 교체), `AdminSidebar.tsx` |
+| 페이지 사진·로고 | `lib/landing-photos.ts`, `components/admin/LandingPagePhotosCard.tsx` (신규), `LandingPageForm.tsx`, `ImageUploadField.tsx`(삭제), `app/admin/pages/actions.ts`·`[id]/edit`·`[id]/preview`, `lib/landing-pages.ts`, `lib/landing-page-validation.ts`, `lib/site-profile.ts`, `app/admin/settings/actions.ts`, `SiteProfileSettingsPanel.tsx`, `SeoSettingsPanel.tsx` |
+| 공개 화면·SEO | `app/[slug]/page.tsx`, `LandingPageRenderer.tsx`, `LocalSeoSections.tsx`(갤러리), `TemplateA/B.tsx`, `lib/seo-resolver.ts`, `lib/seo.ts`, `lib/structured-data.ts` |
+| 엑셀·대기열 | `lib/bulk-upload/columns.ts`·`check.ts`·`context.ts`·`enqueue.ts`, `app/admin/bulk/actions.ts`, `BulkUploadPanel.tsx`, `lib/publish-queue.ts`, `QueueItemForm.tsx`, `docs/samples/*` |
+| 백업 | `types/backup.ts`, `lib/backup/export.ts`·`sanitize.ts`·`restore.ts`, `app/admin/settings/backup/validate/route.ts`, `BackupRestorePanel.tsx` |
+| 타입 | `types/landing-page.ts`, `types/publish-queue.ts` |
+| 테스트 | `tests/photos.db.test.tsx` (신규 61개), 기존 테스트 데이터에 새 칸 추가(`admin-tweaks`·`backup-publish-queue`·`bulk-components`·`bulk-upload-check`·`bulk-upload-queue`·`local-seo`·`local-seo-upload`·`seo-geo`), `tests/helpers/pglite-supabase.ts`(not·single) |
+
+### 검증
+
+- `npm test` ✅ 24개 파일, **609개**(기존 548 + 신규 61). 기존 테스트는 새 칸(사진2·3, 대표 로고, 보관함 목록)을 데이터에 넣고, 양식 칸 수·백업 version 숫자를 고정한 곳만 맞춤(version 3 읽기 검사는 그대로 version 3으로 확인)
+- `npx tsc --noEmit` ✅ / `npx eslint .` ✅ / `npx next build` ✅(`/admin/media` 생김)
+- 브라우저 압축(canvas)·실제 Storage 업로드는 자동 테스트하지 않음(크기 계산·형식 판별·서버 확인만) → 미리보기에서 확인 필요
+
+### 배포할 때(사용자 승인 후)
+
+1. 운영 DB 백업 → **019 먼저 적용**(`begin;`/`commit;`). 이 브랜치 코드는 019 없이는 대기열 저장·보관함이 안 됨
+2. 019만 적용된 동안(머지 전) 예전 코드의 이미지 올리기는 2MB 넘는 파일이 거절됨(압축 없음) → 019 적용 후 바로 머지
+3. 머지 → 자동 배포 → 보관함 올리기·고르기·삭제 막힘, 페이지 사진 저장, 랜딩 갤러리·og:image 확인
+- 기존 페이지 사진(예전 `landing-pages/` 24개 파일)은 보관함 목록에 없다 — 그대로 보이고 og:image도 예전처럼 사진1 원본. 보관함으로 옮기려면 따로 작업(백업·승인 후)

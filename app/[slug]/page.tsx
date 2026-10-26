@@ -31,7 +31,8 @@ export async function generateMetadata({
     return { robots: { index: false, follow: false } };
   }
 
-  return buildLandingPageMetadata(data.landingPage, data.seoSettings);
+  // 대표 업체 로고(og:image 대체용). getSiteProfile은 요청 안에서 한 번만 조회한다.
+  return buildLandingPageMetadata(data.landingPage, data.seoSettings, await getSiteProfile());
 }
 
 export default async function PublicLandingPage({
@@ -45,7 +46,6 @@ export default async function PublicLandingPage({
   }
 
   const { landingPage, seoSettings, faqs } = data;
-  const resolvedSeo = resolveLandingPageSeo(landingPage, seoSettings);
   const resolvedFaqs = resolveLandingPageFaqs(
     landingPage,
     faqs,
@@ -53,6 +53,7 @@ export default async function PublicLandingPage({
   );
   // 7단계: 같은 지역 다른 서비스 / 근처 지역 같은 서비스 / 지역 모음 링크
   const [related, siteProfile] = await Promise.all([getRelatedLinks(landingPage), getSiteProfile()]);
+  const resolvedSeo = resolveLandingPageSeo(landingPage, seoSettings, siteProfile);
 
   return (
     <LandingPageRenderer

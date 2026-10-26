@@ -8,10 +8,12 @@ import type { LandingPageFaq, LandingPageSeoSettings } from "@/types/seo";
 import type { ConsultationRequest } from "@/types/consultation-request";
 import {
   LANDING_PAGE_LOCAL_SEO_KEYS,
+  PHOTO_KEYS,
   QUEUE_LOCAL_SEO_KEYS,
   type BackupEventRow,
   type BackupFile,
   type BackupLandingPage,
+  type BackupMediaAsset,
   type BackupQueueRow,
 } from "@/types/backup";
 
@@ -118,6 +120,15 @@ export interface RestorePlan {
   };
   siteVerification: {
     willUpdate: boolean;
+  };
+  /** 대표 업체 정보(version 4부터): 'default' 행을 백업 값으로 갱신 */
+  siteProfile: {
+    willUpdate: boolean;
+  };
+  /** 사진 보관함 목록(version 4부터): 없는 행만 추가. id·sha256·이름이 이미 있으면 건너뜀 */
+  mediaAssets: {
+    rowsToInsert: BackupMediaAsset[];
+    skipExistingCount: number;
   };
   /** landing_pages에 충돌이 하나라도 있으면 false — 이때는 어떤 테이블도 쓰지 않는다. */
   canRestore: boolean;
@@ -239,6 +250,8 @@ export async function computeRestorePlan(
             unlinkedCount: 0,
           },
           siteVerification: { willUpdate: false },
+          siteProfile: { willUpdate: false },
+          mediaAssets: { rowsToInsert: [], skipExistingCount: 0 },
           canRestore: false,
           blockReason:
             "URL(slug) 충돌이 있어 복구를 실행할 수 없습니다. 충돌 목록을 확인해주세요.",
@@ -362,6 +375,10 @@ export async function computeRestorePlan(
     const queuePlan = await planPublishQueue(supabase, backup, resultingLandingPageIds);
     if (queuePlan.error) return { plan: null, error: queuePlan.error };
 
+    // --- 사진 보관함 목록(version 4부터): 없는 행만 추가 ---
+    const mediaPlan = await planMediaAssets(supabase, backup);
+    if (mediaPlan.error) return { plan: null, error: mediaPlan.error };
+
     return {
       plan: {
         landingPages: {
@@ -398,6 +415,8 @@ export async function computeRestorePlan(
         siteVerification: {
           willUpdate: backup.data.siteVerificationSettings !== null,
         },
+        siteProfile: { willUpdate: backup.data.siteProfile !== null },
+        mediaAssets: mediaPlan.plan,
         canRestore: true,
       },
     };
@@ -405,6 +424,41 @@ export async function computeRestorePlan(
     console.error("[backup-restore] plan client error:", err instanceof Error ? err.message : err);
     return { plan: null, error: "복구 계획을 계산하지 못했습니다." };
   }
+}
+
+/** 사진 보관함 목록: 지금 없는 행만 넣는다(같은 id·같은 사진(sha256)·같은 이름이 있으면 건너뜀) */
+async function planMediaAssets(
+  supabase: SupabaseClient,
+  backup: BackupFile
+): Promise<{ plan: RestorePlan["mediaAssets"]; error: string | null }> {
+  const rows = backup.data.mediaAssets;
+  if (rows.length === 0) return { plan: { rowsToInsert: [], skipExistingCount: 0 }, error: null };
+
+  const { data, error } = await fetchAllRows<{ id: string; sha256: string; name: string }>((from, to) =>
+    supabase.from("media_assets").select("id, sha256, name").order("id", { ascending: true }).range(from, to)
+  );
+  if (error) {
+    console.error("[backup-restore] media_assets select error:", error);
+    return { plan: { rowsToInsert: [], skipExistingCount: 0 }, error: "media_assets 현재 상태를 확인하지 못했습니다." };
+  }
+  const ids = new Set(data.map((row) => row.id));
+  const shas = new Set(data.map((row) => row.sha256));
+  const names = new Set(data.map((row) => row.name.toLowerCase()));
+
+  const rowsToInsert: BackupMediaAsset[] = [];
+  let skipExistingCount = 0;
+  for (const row of rows) {
+    const name = row.name.toLowerCase();
+    if (ids.has(row.id) || shas.has(row.sha256) || names.has(name)) {
+      skipExistingCount += 1;
+      continue;
+    }
+    ids.add(row.id);
+    shas.add(row.sha256);
+    names.add(name);
+    rowsToInsert.push(row);
+  }
+  return { plan: { rowsToInsert, skipExistingCount }, error: null };
 }
 
 async function planPublishQueue(
@@ -485,6 +539,8 @@ export type RestorePhase =
   | "consultations"
   | "events"
   | "publish_queue"
+  | "media_assets"
+  | "site_profile"
   | "site_verification";
 
 export interface RestoreExecutionResult {
@@ -502,6 +558,8 @@ export interface RestoreExecutionResult {
   consultations: { inserted: number; skipped: number; submissionConflicts: number; orphan: number };
   events: { inserted: number; skipped: number; orphan: number };
   publishQueue: { inserted: number; updated: number; conflicts: number; unlinked: number };
+  mediaAssets: { inserted: number; skipped: number };
+  siteProfile: { updated: boolean };
   siteVerification: { updated: boolean };
 }
 
@@ -510,8 +568,8 @@ export interface RestoreExecutionResult {
  * (Route Handler)에서만 호출해야 한다.
  *
  * 순서: landing_pages → seo_settings → faqs → consultations → events →
- * landing_page_queue → site_verification_settings. 각 단계는 upsert/insert를 청크 단위로 나눠
- * 호출하고, 어느 단계에서든 예상치 못한 DB 오류가 나면 그 즉시 멈추고
+ * landing_page_queue → media_assets → site_profile → site_verification_settings.
+ * 각 단계는 upsert/insert를 청크 단위로 나눠 호출하고, 어느 단계에서든 예상치 못한 DB 오류가 나면 그 즉시 멈추고
  * "partial_failure"를 반환한다(이미 반영된 이전 단계까지 되돌리는 자동
  * rollback은 없다 — 이 프로젝트에 트랜잭션 인프라가 없으므로, 실패 시
  * 무엇이 어디까지 반영됐는지를 정확히 보고하는 쪽을 택했다).
@@ -527,6 +585,8 @@ export async function executeMergeRestore(
     consultations: { inserted: 0, skipped: 0, submissionConflicts: 0, orphan: 0 },
     events: { inserted: 0, skipped: 0, orphan: 0 },
     publishQueue: { inserted: 0, updated: 0, conflicts: 0, unlinked: 0 },
+    mediaAssets: { inserted: 0, skipped: 0 },
+    siteProfile: { updated: false },
     siteVerification: { updated: false },
   });
 
@@ -575,6 +635,7 @@ export async function executeMergeRestore(
             // (한 파일 안의 행은 모두 같은 version이라 청크 안에서 키가 섞이지 않는다)
             ...("published_at" in r ? { published_at: r.published_at } : {}),
             ...presentKeys(r, LANDING_PAGE_LOCAL_SEO_KEYS),
+            ...presentKeys(r, PHOTO_KEYS),
             created_at: r.created_at,
             updated_at: r.updated_at,
           })),
@@ -731,6 +792,7 @@ export async function executeMergeRestore(
           landing_page_id: r.landing_page_id,
           batch_id: r.batch_id,
           ...presentKeys(r, QUEUE_LOCAL_SEO_KEYS),
+          ...presentKeys(r, PHOTO_KEYS),
           created_at: r.created_at,
         })),
         { onConflict: "id" }
@@ -748,7 +810,37 @@ export async function executeMergeRestore(
     result.publishQueue.conflicts = plan.publishQueue.conflictCount;
     result.publishQueue.unlinked = plan.publishQueue.unlinkedCount;
 
-    // 7) site_verification_settings — singleton row 갱신.
+    // 7) 사진 보관함 목록(version 4) — 없는 행만 추가. 파일은 Storage에 그대로 있다고 본다(백업에 파일 없음).
+    for (const rows of chunk(plan.mediaAssets.rowsToInsert, WRITE_CHUNK_SIZE)) {
+      const { error } = await supabase.from("media_assets").insert(rows);
+      if (error) {
+        console.error("[backup-restore] media_assets insert error:", error.message);
+        result.status = "partial_failure";
+        result.failedPhase = "media_assets";
+        result.error = "사진 보관함 목록 복구 중 오류가 발생했습니다.";
+        return result;
+      }
+    }
+    result.mediaAssets.inserted = plan.mediaAssets.rowsToInsert.length;
+    result.mediaAssets.skipped = plan.mediaAssets.skipExistingCount;
+
+    // 8) 대표 업체 정보(version 4) — singleton row 갱신(로고 포함).
+    if (backup.data.siteProfile) {
+      const { error } = await supabase
+        .from("site_profile")
+        .update({ ...backup.data.siteProfile, updated_at: new Date().toISOString() })
+        .eq("id", "default");
+      if (error) {
+        console.error("[backup-restore] site_profile update error:", error.message);
+        result.status = "partial_failure";
+        result.failedPhase = "site_profile";
+        result.error = "대표 업체 정보 복구 중 오류가 발생했습니다.";
+        return result;
+      }
+      result.siteProfile.updated = true;
+    }
+
+    // 9) site_verification_settings — singleton row 갱신.
     if (backup.data.siteVerificationSettings) {
       const { error } = await supabase
         .from("site_verification_settings")

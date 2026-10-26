@@ -15,6 +15,8 @@ import {
   type BackupCounts,
   type BackupEventRow,
   type BackupFile,
+  type BackupMediaAsset,
+  type BackupSiteProfile,
   type BackupStorageManifestEntry,
 } from "@/types/backup";
 
@@ -68,6 +70,13 @@ function buildStorageManifest(
         path: getStoragePathFromPublicUrl(lp.main_image_url),
       });
     }
+    // 019: 사진 2·3(보관함 사진이면 path는 null — 파일은 media_assets 목록으로 찾는다)
+    for (const [kind, url] of [
+      ["image2", lp.image_2_url],
+      ["image3", lp.image_3_url],
+    ] as const) {
+      if (url) manifest.push({ landingPageId: lp.id, kind, url, path: getStoragePathFromPublicUrl(url) });
+    }
   }
 
   for (const seo of seoSettings) {
@@ -92,9 +101,9 @@ export interface BuildBackupFileResult {
 
 /**
  * 전체 백업 파일을 생성한다. read-only — 이 함수는 어떤 테이블도 수정하지
- * 않는다. 일곱 조회(landing_pages/seo/faqs/consultations/events/
- * landing_page_queue/site_verification_settings) 중 하나라도 실패하면 불완전한 백업을
- * 반환하지 않고 즉시 실패로 처리한다.
+ * 않는다. 아홉 조회(landing_pages/seo/faqs/consultations/events/
+ * landing_page_queue/site_verification_settings/site_profile/media_assets) 중 하나라도 실패하면
+ * 불완전한 백업을 반환하지 않고 즉시 실패로 처리한다.
  */
 export async function buildBackupFile(): Promise<BuildBackupFileResult> {
   try {
@@ -108,6 +117,8 @@ export async function buildBackupFile(): Promise<BuildBackupFileResult> {
       eventsRes,
       queueRes,
       verificationRes,
+      siteProfileRes,
+      mediaRes,
     ] = await Promise.all([
         fetchAllTableRows<LandingPage>(supabase, "landing_pages", "*", [
           "created_at",
@@ -142,6 +153,12 @@ export async function buildBackupFile(): Promise<BuildBackupFileResult> {
           .select("google_site_verification, naver_site_verification")
           .eq("id", "default")
           .maybeSingle(),
+        supabase
+          .from("site_profile")
+          .select("business_name, description, phone, kakao_url, logo_url")
+          .eq("id", "default")
+          .maybeSingle(),
+        fetchAllTableRows<BackupMediaAsset>(supabase, "media_assets", "*", ["created_at", "id"]),
       ]);
 
     const firstError =
@@ -151,11 +168,16 @@ export async function buildBackupFile(): Promise<BuildBackupFileResult> {
       consultationsRes.error ??
       eventsRes.error ??
       queueRes.error ??
-      (verificationRes.error ? "검색엔진 인증 설정을 불러오지 못했습니다." : null);
+      mediaRes.error ??
+      (verificationRes.error ? "검색엔진 인증 설정을 불러오지 못했습니다." : null) ??
+      (siteProfileRes.error ? "대표 업체 정보를 불러오지 못했습니다." : null);
 
     if (firstError) {
       if (verificationRes.error) {
         console.error("[backup] site_verification_settings select error:", verificationRes.error.message);
+      }
+      if (siteProfileRes.error) {
+        console.error("[backup] site_profile select error:", siteProfileRes.error.message);
       }
       return { success: false, error: firstError };
     }
@@ -184,6 +206,8 @@ export async function buildBackupFile(): Promise<BuildBackupFileResult> {
         siteVerificationSettings: verificationRes.data ?? null,
         storageManifest: buildStorageManifest(landingPagesRes.data, seoRes.data),
         publishQueue: queueRes.data,
+        siteProfile: (siteProfileRes.data as BackupSiteProfile | null) ?? null,
+        mediaAssets: mediaRes.data,
       },
     };
 

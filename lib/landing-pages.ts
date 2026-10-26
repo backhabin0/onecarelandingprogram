@@ -14,6 +14,7 @@ import type {
   UpdateLandingPageInput,
 } from "@/types/landing-page";
 import type { LandingPageFaq, LandingPageSeoSettings } from "@/types/seo";
+import type { NormalizedLandingPagePhotos } from "@/lib/landing-page-validation";
 
 interface GetLandingPagesResult {
   data: LandingPage[];
@@ -245,7 +246,8 @@ export interface InsertLandingPageResult {
 }
 
 export async function insertLandingPage(
-  input: CreateLandingPageInput
+  input: CreateLandingPageInput,
+  photos: NormalizedLandingPagePhotos | null = null
 ): Promise<InsertLandingPageResult> {
   try {
     const supabase = await getSupabaseServerClient();
@@ -262,6 +264,8 @@ export async function insertLandingPage(
         address: input.address || null,
         template: input.template,
         status: input.status,
+        // 019: 만들 때 고른 사진·로고. 값이 있는 칸만 보낸다(고르지 않은 칸은 DB 기본값 null)
+        ...Object.fromEntries(Object.entries(photos ?? {}).filter(([, value]) => value !== null)),
       })
       .select("id")
       .single();
@@ -390,7 +394,7 @@ export async function deleteLandingPage(
     // (다른 페이지의 이미지는 절대 건드리지 않도록 이 row에 한정해서만 조회한다)
     const { data: existing } = await supabase
       .from("landing_pages")
-      .select("logo_url, main_image_url")
+      .select("logo_url, main_image_url, image_2_url, image_3_url")
       .eq("id", id)
       .maybeSingle();
 
@@ -404,10 +408,12 @@ export async function deleteLandingPage(
     if (existing) {
       // DB row는 이미 삭제되었으므로, Storage 정리 실패가 되살릴 수는 없다.
       // best-effort로만 처리한다.
-      await Promise.all([
-        removeLandingPageImageByUrl(supabase, existing.logo_url),
-        removeLandingPageImageByUrl(supabase, existing.main_image_url),
-      ]);
+      // 보관함(library/) 사진은 여기서 지우지 않는다 — 예전 페이지별 파일(landing-pages/)만, 쓰는 곳이 없을 때.
+      await Promise.all(
+        [existing.logo_url, existing.main_image_url, existing.image_2_url, existing.image_3_url].map((url) =>
+          removeLandingPageImageByUrl(supabase, url)
+        )
+      );
     }
 
     return { success: true };
@@ -589,51 +595,57 @@ export async function updateLandingPageStatus(
   }
 }
 
-export type LandingPageImageField = "logo_url" | "main_image_url";
-
-export interface UpdateLandingPageImageUrlResult {
+export interface UpdateLandingPagePhotosResult {
   success: boolean;
   error?: string;
   slug?: string;
 }
 
 /**
- * logo_url 또는 main_image_url 컬럼만 갱신한다.
- * Storage 업로드/삭제 자체는 호출부(Server Action)에서 처리하고,
- * 이 함수는 DB에 public URL(또는 null)만 반영한다.
+ * 019: 페이지 사진·로고 칸(로고, 사진1~3과 설명)을 한 번에 저장한다(검사는 호출하는 action에서).
+ * 바꾸거나 비운 예전 페이지별 파일(landing-pages/)은 다른 곳이 안 쓰면 best-effort로 지운다.
+ * 보관함 사진은 지우지 않는다(보관함 화면에서만 지움).
  */
-export async function updateLandingPageImageUrl(
+export async function updateLandingPagePhotos(
   id: string,
-  field: LandingPageImageField,
-  url: string | null
-): Promise<UpdateLandingPageImageUrlResult> {
+  photos: NormalizedLandingPagePhotos
+): Promise<UpdateLandingPagePhotosResult> {
   try {
     const supabase = await getSupabaseServerClient();
+    const { data: before, error: loadError } = await supabase
+      .from("landing_pages")
+      .select("logo_url, main_image_url, image_2_url, image_3_url")
+      .eq("id", id)
+      .maybeSingle();
+    if (loadError) {
+      console.error("[landing_pages] select photos error:", loadError);
+      return { success: false, error: "사진 정보를 저장하지 못했습니다. 잠시 후 다시 시도해주세요." };
+    }
+    if (!before) return { success: false, error: "랜딩페이지를 찾을 수 없습니다." };
+
     const { data, error } = await supabase
       .from("landing_pages")
-      .update({ [field]: url })
+      .update(photos)
       .eq("id", id)
       .select("slug")
       .single();
 
     if (error) {
-      console.error("[landing_pages] update image url error:", error);
-      return {
-        success: false,
-        error: "이미지 정보를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.",
-      };
+      console.error("[landing_pages] update photos error:", error);
+      return { success: false, error: "사진 정보를 저장하지 못했습니다. 잠시 후 다시 시도해주세요." };
     }
 
-    return { success: true, slug: data?.slug };
+    const kept = new Set([photos.logo_url, photos.main_image_url, photos.image_2_url, photos.image_3_url]);
+    const previous = before as Pick<NormalizedLandingPagePhotos, "logo_url" | "main_image_url" | "image_2_url" | "image_3_url">;
+    const replaced = [previous.logo_url, previous.main_image_url, previous.image_2_url, previous.image_3_url].filter(
+      (url): url is string => Boolean(url) && !kept.has(url)
+    );
+    await Promise.all(Array.from(new Set(replaced), (url) => removeLandingPageImageByUrl(supabase, url)));
+
+    return { success: true, slug: (data as { slug: string } | null)?.slug };
   } catch (err) {
     console.error("[landing_pages] client error:", err);
-    return {
-      success: false,
-      error:
-        err instanceof Error
-          ? err.message
-          : "이미지 정보를 저장하지 못했습니다.",
-    };
+    return { success: false, error: "사진 정보를 저장하지 못했습니다." };
   }
 }
 
@@ -813,6 +825,12 @@ export async function duplicateLandingPage(
         address: source.address,
         logo_url: source.logo_url,
         main_image_url: source.main_image_url,
+        // 019: 사진 2·3과 설명도 같은 주소를 그대로 쓴다(파일은 복사하지 않음)
+        main_image_alt: source.main_image_alt,
+        image_2_url: source.image_2_url,
+        image_2_alt: source.image_2_alt,
+        image_3_url: source.image_3_url,
+        image_3_alt: source.image_3_alt,
         template: source.template,
         status: overrides.status,
       })

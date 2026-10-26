@@ -1,5 +1,7 @@
 import Link from "next/link";
+import SafeImage from "@/components/landing/SafeImage";
 import type { BreadcrumbItem, RelatedLinks } from "@/lib/local-seo";
+import type { LandingPhoto } from "@/lib/landing-photos";
 
 /** 화면에 보이는 경로(홈 > 시/군 > 페이지). BreadcrumbList 구조화 데이터와 같은 내용 */
 export function Breadcrumbs({ items, variant = "light" }: { items: BreadcrumbItem[]; variant?: "light" | "dark" }) {
@@ -85,6 +87,35 @@ export function RelatedLinksSection({ links, variant = "light" }: { links: Relat
             </Link>
           </p>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+/** 019: 사진 갤러리(사진 2·3). 본문에 <img alt>로 보여 검색엔진이 사진과 설명을 함께 읽는다 */
+export function PhotoGallerySection({ photos, variant = "light" }: { photos: LandingPhoto[]; variant?: "light" | "dark" }) {
+  if (photos.length === 0) return null;
+  const dark = variant === "dark";
+  return (
+    <section className={dark ? "bg-slate-950" : "border-t border-slate-100 bg-white"}>
+      <div className="mx-auto max-w-3xl px-5 py-12 sm:py-16">
+        <h2 className={`text-xl font-bold sm:text-2xl ${dark ? "text-white" : "text-slate-900"}`}>현장 사진</h2>
+        <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {photos.map((photo) => (
+            <li key={photo.position}>
+              <figure className="flex flex-col gap-2">
+                <SafeImage
+                  src={photo.url}
+                  alt={photo.alt}
+                  wrapperClassName="relative aspect-[4/3] w-full overflow-hidden rounded-xl"
+                  className="object-cover"
+                  sizes="(max-width: 640px) 100vw, 384px"
+                />
+                <figcaption className={`text-sm ${dark ? "text-slate-300" : "text-slate-600"}`}>{photo.alt}</figcaption>
+              </figure>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );

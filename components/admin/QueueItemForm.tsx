@@ -4,6 +4,7 @@ import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Card from "@/components/admin/Card";
 import FormField from "@/components/admin/FormField";
+import MediaPickerDialog from "@/components/admin/MediaPickerDialog";
 import { updateQueueItemAction } from "@/app/admin/queue/actions";
 import type { BulkUploadField } from "@/lib/bulk-upload/columns";
 import type { UploadValues } from "@/lib/bulk-upload/parse";
@@ -36,6 +37,8 @@ interface TextField {
   maxLength?: number;
   hint?: string;
   multiline?: boolean;
+  /** 019: 사진 칸 — "보관함에서 고르기" 버튼을 붙인다 */
+  photo?: boolean;
 }
 
 const BASIC_FIELDS: TextField[] = [
@@ -55,9 +58,19 @@ const BASIC_FIELDS: TextField[] = [
   { field: "seoDescription", label: "SEO 설명", maxLength: SEO_MAX_LENGTH.description, multiline: true },
   { field: "city", label: "시/군", maxLength: LOCAL_SEO_MAX_LENGTH.city, hint: "예: 군포시. city_slug와 함께 입력" },
   { field: "citySlug", label: "city_slug", hint: "예: gunpo. 지역 모음 페이지 /area/city_slug" },
-  { field: "mainImageUrl", label: "대표 사진 URL", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageUrl },
+  {
+    field: "mainImageUrl",
+    label: "대표 사진 URL",
+    maxLength: LOCAL_SEO_MAX_LENGTH.mainImageUrl,
+    photo: true,
+    hint: "보관함 이름 또는 http(s) 주소",
+  },
   { field: "mainImageAlt", label: "사진 설명(alt)", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageAlt, hint: "비우면 '지역 키워드 현장'으로 자동" },
   { field: "caseStudy", label: "현장 사례", maxLength: LOCAL_SEO_MAX_LENGTH.caseStudy, multiline: true, hint: "직접 다녀온 현장 이야기(선택)" },
+  { field: "image2Url", label: "사진2", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageUrl, photo: true, hint: "보관함 이름 또는 http(s) 주소" },
+  { field: "image2Alt", label: "사진2 설명", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageAlt },
+  { field: "image3Url", label: "사진3", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageUrl, photo: true, hint: "보관함 이름 또는 http(s) 주소" },
+  { field: "image3Alt", label: "사진3 설명", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageAlt },
 ];
 
 const FAQ_FIELDS = [1, 2, 3] as const;
@@ -74,6 +87,8 @@ export default function QueueItemForm({ id, initialValues, currentState }: Queue
   );
 
   const set = (field: BulkUploadField, value: string) => setValues((current) => ({ ...current, [field]: value }));
+  // 보관함에서 고르기 창이 열린 사진 칸
+  const [pickerField, setPickerField] = useState<TextField | null>(null);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -90,11 +105,29 @@ export default function QueueItemForm({ id, initialValues, currentState }: Queue
     });
   };
 
-  const renderInput = ({ field, label, maxLength, hint, multiline }: TextField) => {
+  const renderInput = (item: TextField) => {
+    const { field, label, maxLength, hint, multiline, photo } = item;
     const inputId = `queue-${field}`;
     return (
       <FormField key={field} label={label} htmlFor={inputId} hint={hint}>
-        {multiline ? (
+        {photo ? (
+          <div className="flex gap-2">
+            <input
+              id={inputId}
+              className={inputClassName}
+              value={values[field] ?? ""}
+              maxLength={maxLength}
+              onChange={(e) => set(field, e.target.value)}
+            />
+            <button
+              type="button"
+              onClick={() => setPickerField(item)}
+              className="shrink-0 rounded-md border border-slate-300 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              보관함에서 고르기
+            </button>
+          </div>
+        ) : multiline ? (
           <textarea
             id={inputId}
             className={`${inputClassName} min-h-24`}
@@ -117,6 +150,17 @@ export default function QueueItemForm({ id, initialValues, currentState }: Queue
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+      {pickerField ? (
+        <MediaPickerDialog
+          kind="photo"
+          title={`${pickerField.label} 고르기`}
+          onClose={() => setPickerField(null)}
+          onSelect={(asset) => {
+            set(pickerField.field, asset.url);
+            setPickerField(null);
+          }}
+        />
+      ) : null}
       {currentState === "failed" ? (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           공개에 실패한 항목입니다. 내용을 고친 뒤 상태를 정해 저장하면 다시 공개 대상이 됩니다.

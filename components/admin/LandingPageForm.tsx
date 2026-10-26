@@ -5,17 +5,16 @@ import { useRouter } from "next/navigation";
 import FormField from "@/components/admin/FormField";
 import Card from "@/components/admin/Card";
 import TemplateSelector from "@/components/admin/TemplateSelector";
-import ImageUploadField from "@/components/admin/ImageUploadField";
+import LandingPagePhotosCard, { EMPTY_PHOTOS } from "@/components/admin/LandingPagePhotosCard";
 import { mockTemplates } from "@/lib/mock-data";
 import {
   createLandingPageAction,
   updateLandingPageAction,
-  updateLandingPageImageAction,
+  updateLandingPagePhotosAction,
 } from "@/app/admin/pages/actions";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { uploadLandingPageImage } from "@/lib/storage/landing-page-assets";
 import type {
   CreateLandingPageInput,
+  LandingPagePhotosInput,
   LandingPageStatus,
 } from "@/types/landing-page";
 
@@ -39,23 +38,21 @@ interface LandingPageFormProps {
   mode?: "create" | "edit";
   landingPageId?: string;
   initialValues?: CreateLandingPageInput;
-  initialLogoUrl?: string | null;
-  initialMainImageUrl?: string | null;
+  /** 019: 로고·사진1~3과 설명(수정 화면에서 지금 값) */
+  initialPhotos?: LandingPagePhotosInput;
 }
 
 export default function LandingPageForm({
   mode = "create",
   landingPageId,
   initialValues,
-  initialLogoUrl = null,
-  initialMainImageUrl = null,
+  initialPhotos = EMPTY_PHOTOS,
 }: LandingPageFormProps) {
   const router = useRouter();
   const [values, setValues] = useState<CreateLandingPageInput>(
     initialValues ?? DEFAULT_VALUES
   );
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [mainImageFile, setMainImageFile] = useState<File | null>(null);
+  const [photos, setPhotos] = useState<LandingPagePhotosInput>(initialPhotos);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -82,81 +79,26 @@ export default function LandingPageForm({
         return;
       }
 
+      // 사진 칸을 고치고 "사진 저장"을 누르지 않았으면 여기서 함께 저장한다.
+      if (JSON.stringify(photos) !== JSON.stringify(initialPhotos)) {
+        const photoResult = await updateLandingPagePhotosAction(landingPageId, photos);
+        if (!photoResult.success) {
+          setErrorMessage(photoResult.error ?? "사진 정보를 저장하지 못했습니다.");
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       router.push("/admin/pages");
       return;
     }
 
-    const createResult = await createLandingPageAction(values);
+    // 만들기 화면에서 고른 사진·로고는 보관함에 이미 올라가 있어 페이지와 함께 저장한다.
+    const createResult = await createLandingPageAction(values, photos);
 
     if (!createResult.success || !createResult.id) {
       setErrorMessage(createResult.error ?? "저장 중 오류가 발생했습니다.");
       setIsSubmitting(false);
-      return;
-    }
-
-    const newId = createResult.id;
-    const imageWarnings: string[] = [];
-    const supabase = getSupabaseBrowserClient();
-
-    if (logoFile) {
-      const uploadResult = await uploadLandingPageImage(
-        supabase,
-        newId,
-        "logo",
-        logoFile
-      );
-
-      if (!uploadResult.url) {
-        imageWarnings.push(
-          uploadResult.error ?? "로고 이미지 업로드에 실패했습니다."
-        );
-      } else {
-        const saveResult = await updateLandingPageImageAction(
-          newId,
-          "logo_url",
-          uploadResult.url
-        );
-        if (!saveResult.success) {
-          imageWarnings.push(
-            saveResult.error ?? "로고 이미지 저장에 실패했습니다."
-          );
-        }
-      }
-    }
-
-    if (mainImageFile) {
-      const uploadResult = await uploadLandingPageImage(
-        supabase,
-        newId,
-        "main",
-        mainImageFile
-      );
-
-      if (!uploadResult.url) {
-        imageWarnings.push(
-          uploadResult.error ?? "메인 이미지 업로드에 실패했습니다."
-        );
-      } else {
-        const saveResult = await updateLandingPageImageAction(
-          newId,
-          "main_image_url",
-          uploadResult.url
-        );
-        if (!saveResult.success) {
-          imageWarnings.push(
-            saveResult.error ?? "메인 이미지 저장에 실패했습니다."
-          );
-        }
-      }
-    }
-
-    if (imageWarnings.length > 0) {
-      window.alert(
-        `랜딩페이지는 생성되었지만 일부 이미지 처리에 실패했습니다.\n\n${imageWarnings.join(
-          "\n"
-        )}\n\n수정 화면에서 다시 업로드할 수 있습니다.`
-      );
-      router.push(`/admin/pages/${newId}/edit`);
       return;
     }
 
@@ -270,32 +212,11 @@ export default function LandingPageForm({
         </div>
       </Card>
 
-      <Card className="p-6">
-        <h2 className="text-base font-semibold text-slate-900">이미지</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          {mode === "edit"
-            ? "이미지를 선택하면 즉시 업로드되어 저장됩니다."
-            : "선택한 이미지는 랜딩페이지 생성 후 업로드됩니다."}
-        </p>
-        <div className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <ImageUploadField
-            kind="logo"
-            label="로고 이미지"
-            hint="JPG, PNG, WEBP · 최대 3MB"
-            landingPageId={mode === "edit" ? landingPageId : undefined}
-            currentUrl={initialLogoUrl}
-            onFileSelected={setLogoFile}
-          />
-          <ImageUploadField
-            kind="main"
-            label="메인 이미지"
-            hint="JPG, PNG, WEBP · 최대 10MB"
-            landingPageId={mode === "edit" ? landingPageId : undefined}
-            currentUrl={initialMainImageUrl}
-            onFileSelected={setMainImageFile}
-          />
-        </div>
-      </Card>
+      <LandingPagePhotosCard
+        photos={photos}
+        onChange={setPhotos}
+        landingPageId={mode === "edit" ? landingPageId : undefined}
+      />
 
       <Card className="p-6">
         <h2 className="text-base font-semibold text-slate-900">템플릿</h2>

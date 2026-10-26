@@ -46,6 +46,11 @@ export interface LandingPageQueueRow {
   main_image_url: string | null;
   main_image_alt: string | null;
   case_study: string | null;
+  /** 019: 사진 2·3과 설명 */
+  image_2_url: string | null;
+  image_2_alt: string | null;
+  image_3_url: string | null;
+  image_3_alt: string | null;
   source: LandingPageQueueSource;
   state: LandingPageQueueState;
   /** 앱 검증 결과나 공개 실패 사유(배열). 형식은 lib/landing-page-validation.ts의 ValidationIssue */

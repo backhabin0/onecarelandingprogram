@@ -11,6 +11,7 @@ import {
   validateDuplicateLandingPageInput,
   validateFaqInput,
   validateLandingPageInput,
+  validateLandingPagePhotosInput,
   validateSeoSettingsInput,
 } from "@/lib/landing-page-validation";
 import {
@@ -20,9 +21,8 @@ import {
   insertLandingPage,
   renameLandingPages,
   updateLandingPage,
-  updateLandingPageImageUrl,
+  updateLandingPagePhotos,
   updateLandingPageStatus,
-  type LandingPageImageField,
 } from "@/lib/landing-pages";
 import {
   resetSeoOverrides,
@@ -60,7 +60,8 @@ export interface CreateLandingPageResult {
 }
 
 export async function createLandingPageAction(
-  input: CreateLandingPageInput
+  input: CreateLandingPageInput,
+  photos?: unknown
 ): Promise<CreateLandingPageResult> {
   await requireUser();
 
@@ -70,10 +71,20 @@ export async function createLandingPageAction(
     return { success: false, error };
   }
 
-  const result = await insertLandingPage({
+  const page = {
     ...input,
     ...normalized,
-  });
+  };
+
+  // 019: 만들 때 보관함에서 고른 사진·로고(없으면 예전처럼 페이지만 저장)
+  let result: CreateLandingPageResult;
+  if (photos === undefined) {
+    result = await insertLandingPage(page);
+  } else {
+    const checked = validateLandingPagePhotosInput(photos);
+    if (checked.error || !checked.normalized) return { success: false, error: checked.error };
+    result = await insertLandingPage(page, checked.normalized);
+  }
 
   if (result.success) {
     revalidatePath("/admin/pages");
@@ -277,34 +288,29 @@ export async function getLandingPageRenameTargetsAction(
   return { data: data.map((row) => ({ id: row.id, businessName: row.business_name })), error };
 }
 
-export interface UpdateLandingPageImageResult {
+export interface UpdateLandingPagePhotosActionResult {
   success: boolean;
   error?: string;
 }
 
-const VALID_IMAGE_FIELDS: LandingPageImageField[] = ["logo_url", "main_image_url"];
-
 /**
- * logo_url / main_image_url을 갱신한다.
- * 실제 파일 업로드/삭제는 브라우저에서 Supabase Storage로 직접 처리되고,
- * 이 action은 결과 public URL(또는 null)을 DB에 반영하는 역할만 한다.
+ * 019: 페이지 사진·로고(로고, 사진1~3과 설명)를 저장한다. 사진 파일은 보관함에 먼저 올라가 있고
+ * (브라우저 → Storage), 이 action은 고른 주소와 설명을 DB에 반영한다. 서버에서 다시 검사한다.
  */
-export async function updateLandingPageImageAction(
-  id: string,
-  field: LandingPageImageField,
-  url: string | null
-): Promise<UpdateLandingPageImageResult> {
+export async function updateLandingPagePhotosAction(
+  id: unknown,
+  photos: unknown
+): Promise<UpdateLandingPagePhotosActionResult> {
   await requireUser();
 
-  if (!id) {
+  if (!isUuid(id)) {
     return { success: false, error: "잘못된 요청입니다." };
   }
 
-  if (!VALID_IMAGE_FIELDS.includes(field)) {
-    return { success: false, error: "잘못된 요청입니다." };
-  }
+  const { normalized, error } = validateLandingPagePhotosInput(photos);
+  if (error || !normalized) return { success: false, error: error ?? "잘못된 요청입니다." };
 
-  const result = await updateLandingPageImageUrl(id, field, url);
+  const result = await updateLandingPagePhotos(id, normalized);
 
   if (result.success) {
     revalidatePath("/admin/pages");

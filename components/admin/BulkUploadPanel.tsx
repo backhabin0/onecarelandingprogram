@@ -8,6 +8,7 @@ import { enqueueBulkRowsAction, getBulkCheckContextAction } from "@/app/admin/bu
 import {
   buildUploadSlug,
   checkBulkUploadRows,
+  collectPhotoValues,
   decideQueueState,
   type BulkCheckResult,
   type CheckedRowStatus,
@@ -99,6 +100,7 @@ export default function BulkUploadPanel() {
       const context = await getBulkCheckContextAction({
         slugs: result.rows.map((row) => buildUploadSlug(row.values)),
         keywords: result.rows.map((row) => row.values.keyword ?? ""),
+        photoValues: collectPhotoValues(result.rows),
       });
       if (!context.success || !context.thresholds) {
         setError(context.error ?? "검사에 필요한 정보를 불러오지 못했습니다.");
@@ -112,6 +114,7 @@ export default function BulkUploadPanel() {
           existingPairs: context.existingPairs ?? [],
           corpus: context.corpus ?? [],
           thresholds: context.thresholds,
+          mediaLibrary: context.mediaLibrary ?? [],
         })
       );
     } catch {

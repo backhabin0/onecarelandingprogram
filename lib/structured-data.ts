@@ -4,12 +4,14 @@ import type { ResolvedLandingPageSeo } from "@/lib/seo-resolver";
 import type { SiteProfile } from "@/lib/site-profile";
 import { getAbsoluteUrl, getSiteUrl } from "@/lib/site";
 import type { BreadcrumbItem } from "@/lib/local-seo";
-import { areaName, isSameText, looksLikePostalAddress } from "@/lib/business-info";
+import { areaName, looksLikePostalAddress } from "@/lib/business-info";
+import { getLandingPhotos, isSiteBusinessPage, resolvePageLogoUrl } from "@/lib/landing-photos";
 
 const SCHEMA_CONTEXT = "https://schema.org";
 
 /** 구조화 데이터에 쓰는 대표 업체 정보(관리자 설정, lib/site-profile.ts) */
-export type SiteBusiness = Pick<SiteProfile, "businessName" | "description" | "phone" | "kakaoUrl">;
+export type SiteBusiness = Pick<SiteProfile, "businessName" | "description" | "phone" | "kakaoUrl"> &
+  Partial<Pick<SiteProfile, "logoUrl">>;
 
 /** 홈·랜딩페이지가 같은 업체를 가리키도록 쓰는 고정 @id */
 export function siteBusinessId(): string {
@@ -22,7 +24,7 @@ export function siteWebsiteId(): string {
 
 /** 랜딩페이지 업체명이 대표 업체명과 같으면(공백 차이 무시) 같은 업체로 묶는다 */
 function isSiteBusiness(landingPage: LandingPage, site: SiteBusiness | null): site is SiteBusiness & { businessName: string } {
-  return Boolean(site?.businessName) && isSameText(site?.businessName, landingPage.business_name);
+  return isSiteBusinessPage(landingPage, site);
 }
 
 /**
@@ -80,6 +82,8 @@ export function buildOrganizationJsonLd(
   const areaServed = areaServedOf(landingPage, resolvedSeo);
   const telephone = landingPage.phone?.trim() || (sameAsSite ? site.phone : null);
   const type = sameAsSite || address || areaServed.areaServed ? "LocalBusiness" : "Organization";
+  const photos = getLandingPhotos(landingPage);
+  const logo = resolvePageLogoUrl(landingPage, site);
 
   return {
     "@context": SCHEMA_CONTEXT,
@@ -98,8 +102,9 @@ export function buildOrganizationJsonLd(
           },
         }
       : {}),
-    ...(landingPage.main_image_url ? { image: landingPage.main_image_url } : {}),
-    ...(landingPage.logo_url ? { logo: landingPage.logo_url } : {}),
+    // 019: 페이지 사진 1~3(화면에 보이는 사진과 같은 순서). 로고는 페이지 로고 → 같은 업체면 대표 업체 로고
+    ...(photos.length > 0 ? { image: photos.map((photo) => photo.url) } : {}),
+    ...(logo ? { logo } : {}),
     ...areaServed,
     ...(resolvedSeo.businessCategory
       ? { knowsAbout: [resolvedSeo.businessCategory] }
@@ -134,6 +139,7 @@ export function buildSiteBusinessJsonLd(site: SiteBusiness, cities: readonly str
     url: getAbsoluteUrl("/"),
     ...(site.description ? { description: site.description } : {}),
     ...(site.phone ? { telephone: site.phone } : {}),
+    ...(site.logoUrl ? { logo: site.logoUrl } : {}),
     ...(cities.length > 0
       ? { areaServed: cities.map((name) => ({ "@type": "AdministrativeArea", name })) }
       : {}),

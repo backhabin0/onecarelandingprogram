@@ -2,6 +2,8 @@ import "server-only";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
+import { getMediaLibraryEntries } from "@/lib/media-assets";
+import { photoNameCandidates, type MediaLibraryEntry } from "@/lib/media/library";
 import type { CorpusEntry } from "./check";
 import { similarityText } from "./similarity";
 
@@ -29,12 +31,16 @@ export interface LoadBulkCheckContextInput {
   keywords: readonly string[];
   /** 대기열 항목을 수정할 때 자기 자신은 비교 대상에서 뺀다 */
   excludeQueueId?: string;
+  /** 019: 사진 칸에 쓴 값들(보관함 이름이면 주소를 찾아 둔다) */
+  photoValues?: readonly string[];
 }
 
 export interface LoadedBulkCheckContext {
   existingSlugs: string[];
   existingPairs: { region: string; keyword: string }[];
   corpus: CorpusEntry[];
+  /** 사진 칸에 쓴 이름과 맞는 보관함 사진만 */
+  mediaLibrary: MediaLibraryEntry[];
 }
 
 interface QueueCorpusRow {
@@ -66,7 +72,7 @@ interface PageTextRow {
 export async function loadBulkCheckContext(
   input: LoadBulkCheckContextInput
 ): Promise<{ context: LoadedBulkCheckContext; error: string | null }> {
-  const empty: LoadedBulkCheckContext = { existingSlugs: [], existingPairs: [], corpus: [] };
+  const empty: LoadedBulkCheckContext = { existingSlugs: [], existingPairs: [], corpus: [], mediaLibrary: [] };
   const supabase = await getSupabaseServerClient();
   const exclude = input.excludeQueueId;
 
@@ -174,8 +180,14 @@ export async function loadBulkCheckContext(
     }
   }
 
+  // 4) 사진 칸에 쓴 보관함 이름(주소가 아닌 값이 있을 때만 조회)
+  const { data: mediaLibrary, error: mediaError } = await getMediaLibraryEntries(
+    photoNameCandidates(input.photoValues ?? [])
+  );
+  if (mediaError) return { context: empty, error: mediaError };
+
   return {
-    context: { existingSlugs: Array.from(existingSlugs), existingPairs, corpus },
+    context: { existingSlugs: Array.from(existingSlugs), existingPairs, corpus, mediaLibrary },
     error: null,
   };
 }

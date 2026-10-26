@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { LandingPage } from "@/types/landing-page";
 import type { LandingPageSeoSettings } from "@/types/seo";
 import { resolveLandingPageSeo } from "@/lib/seo-resolver";
+import type { SitePhotoInfo } from "@/lib/landing-photos";
 
 export { buildSeoTitle, buildSeoDescription } from "@/lib/seo-auto";
 
@@ -15,9 +16,10 @@ export { buildSeoTitle, buildSeoDescription } from "@/lib/seo-auto";
  */
 export function buildLandingPageMetadata(
   landingPage: LandingPage,
-  seoSettings: LandingPageSeoSettings | null
+  seoSettings: LandingPageSeoSettings | null,
+  site: SitePhotoInfo | null = null
 ): Metadata {
-  const resolved = resolveLandingPageSeo(landingPage, seoSettings);
+  const resolved = resolveLandingPageSeo(landingPage, seoSettings, site);
 
   return {
     title: resolved.title,
@@ -30,7 +32,7 @@ export function buildLandingPageMetadata(
       description: resolved.ogDescription,
       url: resolved.canonical,
       type: "website",
-      ...(resolved.ogImage ? { images: [{ url: resolved.ogImage }] } : {}),
+      ...(resolved.ogImage ? { images: [{ url: resolved.ogImage, ...resolved.ogImageSize }] } : {}),
     },
     twitter: {
       card: "summary_large_image",

@@ -14,6 +14,7 @@ import {
   buildPageBreadcrumbs,
   type RelatedLinks,
 } from "@/lib/local-seo";
+import { getGalleryPhotos, resolvePageLogoUrl } from "@/lib/landing-photos";
 import TemplateA from "@/components/landing/templates/TemplateA";
 import TemplateB from "@/components/landing/templates/TemplateB";
 import { resolveTemplateId } from "@/components/landing/templates";
@@ -70,6 +71,8 @@ export default function LandingPageRenderer({
     breadcrumbs,
     related: preview ? null : related,
     preview,
+    logoUrl: resolvePageLogoUrl(landingPage, siteBusiness),
+    gallery: getGalleryPhotos(landingPage),
   };
 
   return (

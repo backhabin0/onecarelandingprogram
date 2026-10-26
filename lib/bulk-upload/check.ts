@@ -3,7 +3,6 @@ import {
   LOCAL_SEO_MAX_LENGTH,
   SLUG_PATTERN,
   THIN_DESCRIPTION_MIN_LENGTH,
-  isSafeExternalUrl,
   validateFaqInput,
   validateLandingPageRows,
   type BulkLandingPageRowInput,
@@ -11,7 +10,8 @@ import {
 } from "@/lib/landing-page-validation";
 import { mockTemplates } from "@/lib/mock-data";
 import type { LandingPageQueueFaq, LandingPageQueueState } from "@/types/publish-queue";
-import { DEFAULT_UPLOAD_TEMPLATE } from "./columns";
+import { resolvePhotoReference, type MediaLibraryEntry } from "@/lib/media/library";
+import { DEFAULT_UPLOAD_TEMPLATE, PHOTO_UPLOAD_FIELDS } from "./columns";
 import type { UploadRow, UploadValues } from "./parse";
 import {
   SimilarityIndex,
@@ -42,6 +42,8 @@ export interface BulkCheckContext {
   /** 같은 키워드의 기존 페이지·대기열 문구 */
   corpus: Iterable<CorpusEntry>;
   thresholds: SimilarityThresholds;
+  /** 019: 사진 칸에 쓴 보관함 이름과 맞는 사진(이름 → 주소). 없으면 이름은 모두 "보관함에 없음" */
+  mediaLibrary?: readonly MediaLibraryEntry[];
 }
 
 export type CheckedRowStatus = "pass" | "warning" | "error";
@@ -69,6 +71,10 @@ export interface QueueRowInput {
   main_image_url: string | null;
   main_image_alt: string | null;
   case_study: string | null;
+  image_2_url: string | null;
+  image_2_alt: string | null;
+  image_3_url: string | null;
+  image_3_alt: string | null;
   max_similarity: number | null;
 }
 
@@ -150,6 +156,11 @@ const orNull = (text: string) => (text ? text : null);
 const pairKey = (region: string, keyword: string) => JSON.stringify([region, keyword]);
 const percent = (score: number) => `${Math.floor(score * 100)}%`;
 
+/** 행들의 사진 칸 값(대표 사진 URL·사진2·사진3) — 검사 전에 보관함 이름을 찾을 때 쓴다 */
+export function collectPhotoValues(rows: readonly { values: UploadValues }[]): string[] {
+  return rows.flatMap(({ values }) => PHOTO_UPLOAD_FIELDS.map(({ url }) => values[url] ?? "")).filter(Boolean);
+}
+
 /** slug 칸이 비어 있으면 `{region_slug}-{keyword_slug}` */
 export function buildUploadSlug(values: UploadValues): string {
   const explicit = v(values, "slug");
@@ -202,7 +213,68 @@ function checkRegionKeyword(values: UploadValues, errors: ValidationIssue[]) {
   }
 }
 
-/** 7단계 지역 SEO 칸: 시/군·city_slug(둘 다 또는 둘 다 비움), 글자 수, 사진 URL 형식 */
+/**
+ * 019: 사진 칸(대표 사진 URL·사진2·사진3) 해석. http(s) 주소는 그대로, 그 밖에는 사진 보관함 이름으로 찾는다.
+ * 보관함에 없는 이름·주소 형식 오류는 오류로 남기고, 칸 이름(필드) → 저장할 주소를 돌려준다.
+ */
+function resolvePhotoFields(
+  values: UploadValues,
+  library: readonly MediaLibraryEntry[],
+  errors: ValidationIssue[]
+): Partial<Record<keyof UploadValues, string>> {
+  const resolved: Partial<Record<keyof UploadValues, string>> = {};
+  for (const { url: field, alt, label, urlSubject, altSubject } of PHOTO_UPLOAD_FIELDS) {
+    const raw = v(values, field);
+    if (v(values, alt).length > LOCAL_SEO_MAX_LENGTH.mainImageAlt) {
+      errors.push({
+        code: "too_long",
+        fields: [alt],
+        message: `${altSubject} ${LOCAL_SEO_MAX_LENGTH.mainImageAlt}자 이내로 입력해주세요.`,
+      });
+    }
+    if (raw.length > LOCAL_SEO_MAX_LENGTH.mainImageUrl) {
+      errors.push({
+        code: "too_long",
+        fields: [field],
+        message: `${urlSubject} ${LOCAL_SEO_MAX_LENGTH.mainImageUrl}자 이내로 입력해주세요.`,
+      });
+      continue;
+    }
+    const reference = resolvePhotoReference(raw, library);
+    switch (reference.kind) {
+      case "url":
+      case "library":
+        resolved[field] = reference.url;
+        break;
+      case "invalid_url":
+        errors.push({
+          code: "invalid_url",
+          fields: [field],
+          message: `${urlSubject} http:// 또는 https://로 시작하는 주소만 입력할 수 있습니다.`,
+        });
+        break;
+      case "not_found":
+        errors.push({
+          code: "photo_not_found",
+          fields: [field],
+          message: `${label}: 사진 보관함에 "${reference.value}" 사진이 없습니다. 보관함에 먼저 올리거나 http(s) 주소를 써주세요.`,
+        });
+        break;
+      case "ambiguous":
+        errors.push({
+          code: "photo_ambiguous",
+          fields: [field],
+          message: `${label}: "${reference.value}"와 이름이 맞는 사진이 여러 장입니다(${reference.names.join(", ")}). 확장자까지 정확히 써주세요.`,
+        });
+        break;
+      default:
+        break;
+    }
+  }
+  return resolved;
+}
+
+/** 7단계 지역 SEO 칸: 시/군·city_slug(둘 다 또는 둘 다 비움), 글자 수(사진 칸은 resolvePhotoFields) */
 function checkLocalSeoFields(values: UploadValues, errors: ValidationIssue[]) {
   const city = v(values, "city");
   const citySlug = v(values, "citySlug").toLowerCase();
@@ -225,23 +297,12 @@ function checkLocalSeoFields(values: UploadValues, errors: ValidationIssue[]) {
     ["region", "지역은", LOCAL_SEO_MAX_LENGTH.region],
     ["keyword", "키워드는", LOCAL_SEO_MAX_LENGTH.keyword],
     ["city", "시/군은", LOCAL_SEO_MAX_LENGTH.city],
-    ["mainImageUrl", "대표 사진 URL은", LOCAL_SEO_MAX_LENGTH.mainImageUrl],
-    ["mainImageAlt", "사진 설명(alt)은", LOCAL_SEO_MAX_LENGTH.mainImageAlt],
     ["caseStudy", "현장 사례는", LOCAL_SEO_MAX_LENGTH.caseStudy],
   ];
   for (const [field, subject, max] of lengthChecks) {
     if (v(values, field).length > max) {
       errors.push({ code: "too_long", fields: [field], message: `${subject} ${max}자 이내로 입력해주세요.` });
     }
-  }
-
-  const imageUrl = v(values, "mainImageUrl");
-  if (imageUrl && imageUrl.length <= LOCAL_SEO_MAX_LENGTH.mainImageUrl && !isSafeExternalUrl(imageUrl)) {
-    errors.push({
-      code: "invalid_url",
-      fields: ["mainImageUrl"],
-      message: "대표 사진 URL은 http:// 또는 https://로 시작하는 주소만 입력할 수 있습니다.",
-    });
   }
 }
 
@@ -279,7 +340,7 @@ export function collectFaqQuestionWarnings(values: UploadValues): ValidationIssu
 /**
  * 검색엔진 스팸으로 보일 수 있는 상태를 경고한다(저장은 막지 않음).
  * - 키워드 과다 반복: 대표 문구+소개 문구에 같은 키워드가 KEYWORD_REPEAT_LIMIT회 초과
- * - 얇은 페이지: 소개 문구가 THIN_DESCRIPTION_MIN_LENGTH자 미만이고 대표 사진·현장 사례가 모두 없음
+ * - 얇은 페이지: 소개 문구가 THIN_DESCRIPTION_MIN_LENGTH자 미만이고 사진(1~3)·현장 사례가 모두 없음
  */
 export function collectSeoQualityWarnings(values: UploadValues): ValidationIssue[] {
   const warnings: ValidationIssue[] = [];
@@ -296,12 +357,12 @@ export function collectSeoQualityWarnings(values: UploadValues): ValidationIssue
   const description = v(values, "description");
   if (
     description.length < THIN_DESCRIPTION_MIN_LENGTH &&
-    !v(values, "mainImageUrl") &&
+    PHOTO_UPLOAD_FIELDS.every(({ url }) => !v(values, url)) &&
     !v(values, "caseStudy")
   ) {
     warnings.push({
       code: "thin_page",
-      fields: ["description", "mainImageUrl", "caseStudy"],
+      fields: ["description", "mainImageUrl", "image2Url", "image3Url", "caseStudy"],
       message: `내용이 적은 페이지입니다(소개 문구 ${description.length}자, 사진·현장 사례 없음). 소개 문구를 ${THIN_DESCRIPTION_MIN_LENGTH}자 이상으로 늘리거나 사진·현장 사례를 넣으면 검색 노출에 유리합니다.`,
     });
   }
@@ -375,6 +436,7 @@ export function checkBulkUploadRows(
 
     checkRegionKeyword(values, errors);
     checkLocalSeoFields(values, errors);
+    const photoUrls = resolvePhotoFields(values, context.mediaLibrary ?? [], errors);
     errors.push(...validated.errors);
     warnings.push(...validated.warnings);
 
@@ -470,9 +532,14 @@ export function checkBulkUploadRows(
         faqs,
         city: orNull(v(values, "city")),
         city_slug: orNull(v(values, "citySlug").toLowerCase()),
-        main_image_url: orNull(v(values, "mainImageUrl")),
+        // 사진 칸은 보관함 이름을 주소로 바꿔 저장한다(이름을 못 찾은 칸은 오류라 저장되지 않음).
+        main_image_url: orNull(photoUrls.mainImageUrl ?? ""),
         main_image_alt: orNull(v(values, "mainImageAlt")),
         case_study: orNull(v(values, "caseStudy")),
+        image_2_url: orNull(photoUrls.image2Url ?? ""),
+        image_2_alt: orNull(v(values, "image2Alt")),
+        image_3_url: orNull(photoUrls.image3Url ?? ""),
+        image_3_alt: orNull(v(values, "image3Alt")),
         max_similarity: similarity?.score ?? null,
       },
     };

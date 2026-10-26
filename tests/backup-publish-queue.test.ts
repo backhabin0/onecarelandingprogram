@@ -1,4 +1,5 @@
 /**
+ * (version 4의 사진 칸·대표 업체·보관함 목록은 tests/photos.db.test.tsx에서 확인한다)
  * 백업 형식 version 3(7단계에서 지역 SEO 칸 추가) / version 2: landing_pages.published_at과 공개 대기열(landing_page_queue)을
  * 백업·복구에 반영했는지 확인한다. 가짜 Supabase 클라이언트를 쓰므로 실제 DB 연결은 없다.
  */
@@ -43,6 +44,11 @@ function landingPage(i: number, overrides: Row = {}): Row {
     city_slug: i % 2 === 0 ? "gunpo" : null,
     main_image_alt: i % 4 === 0 ? `지역${i} 헬스장 현장` : null,
     case_study: i % 4 === 0 ? "현장 이야기" : null,
+    // version 4(019): 사진 2·3 — DB에는 항상 있는 칸이라 내보낸 파일에도 들어간다
+    image_2_url: null,
+    image_2_alt: null,
+    image_3_url: null,
+    image_3_alt: null,
     created_at: iso(BASE + Math.floor(i / 3) * 1000),
     updated_at: iso(BASE + i * 1000),
     ...overrides,
@@ -78,6 +84,10 @@ function queueRow(i: number, overrides: Row = {}): Row {
     main_image_url: i % 5 === 0 ? `https://img.example/${i}.jpg` : null,
     main_image_alt: null,
     case_study: i % 5 === 0 ? "현장 사례" : null,
+    image_2_url: null,
+    image_2_alt: null,
+    image_3_url: null,
+    image_3_alt: null,
     source: i % 2 === 0 ? "ai" : "excel",
     state,
     validation_errors: state === "failed" ? [{ code: "slug_conflict", fields: ["slug"], message: "이미 사용 중인 URL입니다." }] : [],
@@ -103,6 +113,10 @@ function createDb(tables: { landingPages?: Row[]; queue?: Row[] } = {}) {
       site_verification_settings: [
         { id: "default", google_site_verification: null, naver_site_verification: null },
       ],
+      site_profile: [
+        { id: "default", business_name: null, description: null, phone: null, kakao_url: null, logo_url: null },
+      ],
+      media_assets: [],
     },
   });
 }
@@ -110,7 +124,8 @@ function createDb(tables: { landingPages?: Row[]; queue?: Row[] } = {}) {
 const sortById = (rows: Row[]) =>
   [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
-function backupFile(data: Partial<BackupFile["data"]>, version: number = BACKUP_VERSION) {
+/** 이 파일은 version 3 읽기를 확인한다(사진 칸이 없는 행). version 4는 tests/photos.db.test.tsx */
+function backupFile(data: Partial<BackupFile["data"]>, version = 3) {
   return JSON.stringify({
     format: BACKUP_FORMAT,
     version,
@@ -135,7 +150,7 @@ function parse(text: string): BackupFile {
   return parsed.backup;
 }
 
-describe("백업 내보내기(version 3)", () => {
+describe("백업 내보내기(version 3 칸 포함, 지금 형식은 version 4)", () => {
   it("published_at과 대기열 전체(1,000행 넘어도)를 담는다", async () => {
     const pages = Array.from({ length: 1200 }, (_, i) => landingPage(i));
     const queue = Array.from({ length: 1100 }, (_, i) => queueRow(i));
@@ -144,7 +159,7 @@ describe("백업 내보내기(version 3)", () => {
     const { success, backup } = await buildBackupFile();
 
     expect(success).toBe(true);
-    expect(backup!.version).toBe(3);
+    expect(backup!.version).toBe(BACKUP_VERSION);
     expect(backup!.counts).toMatchObject({ landingPages: 1200, publishQueue: 1100 });
     expect(sortById(backup!.data.landingPages as Row[])).toEqual(sortById(pages));
     expect(sortById(backup!.data.publishQueue as unknown as Row[])).toEqual(sortById(queue));
@@ -163,7 +178,13 @@ describe("백업 파일 읽기", () => {
       landingPage(0).published_at,
       null,
     ]);
-    expect(backup.data.publishQueue).toEqual([queueRow(0), queueRow(3)]);
+    // version 3 파일에는 사진 2·3 칸이 없다고 보고 읽지 않는다(복구 때 현재 값 유지).
+    const withoutPhotoKeys = (row: Row) => {
+      const { image_2_url, image_2_alt, image_3_url, image_3_alt, ...rest } = row;
+      void [image_2_url, image_2_alt, image_3_url, image_3_alt];
+      return rest;
+    };
+    expect(backup.data.publishQueue).toEqual([queueRow(0), queueRow(3)].map(withoutPhotoKeys));
     expect(backup.counts.publishQueue).toBe(2);
   });
 
@@ -181,9 +202,9 @@ describe("백업 파일 읽기", () => {
   });
 
   it("지원하지 않는 버전은 거부", () => {
-    expect(parseAndValidateBackupFile(backupFile({}, 4))).toMatchObject({
+    expect(parseAndValidateBackupFile(backupFile({}, 5))).toMatchObject({
       success: false,
-      error: "지원하지 않는 백업 버전입니다. (version: 4)",
+      error: "지원하지 않는 백업 버전입니다. (version: 5)",
     });
   });
 

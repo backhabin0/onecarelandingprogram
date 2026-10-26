@@ -6,6 +6,7 @@ import {
   SIMILARITY_ERROR_CODE,
   buildUploadSlug,
   checkBulkUploadRows,
+  collectPhotoValues,
   issuesForStorage,
 } from "@/lib/bulk-upload/check";
 import { loadBulkCheckContext } from "@/lib/bulk-upload/context";
@@ -172,6 +173,7 @@ export async function updateQueueItem(
     slugs: [buildUploadSlug(values)],
     keywords: [values.keyword ?? ""],
     excludeQueueId: id,
+    photoValues: collectPhotoValues([{ values }]),
   });
   if (contextError) return { success: false, error: contextError };
 
@@ -358,5 +360,9 @@ export function queueRowToValues(row: LandingPageQueueRow): UploadValues {
     mainImageUrl: row.main_image_url ?? "",
     mainImageAlt: row.main_image_alt ?? "",
     caseStudy: row.case_study ?? "",
+    image2Url: row.image_2_url ?? "",
+    image2Alt: row.image_2_alt ?? "",
+    image3Url: row.image_3_url ?? "",
+    image3Alt: row.image_3_alt ?? "",
   };
 }
