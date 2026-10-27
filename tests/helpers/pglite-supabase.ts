@@ -4,6 +4,8 @@
  * lib/ 코드가 쓰는 범위만 지원한다:
  *   select(cols, { count, head }) / insert / update / delete
  *   eq / neq / in / ilike / or("a.ilike.x,b.ilike.y") / order / range / maybeSingle / 쓰기 뒤 select
+ *   select 안의 관계 조인 "table(cols)" / "table!inner(cols)"(외래 키로 연결된 표, 한 단계만)와
+ *   is("table", null)(조인 대상이 없는 행만 — PostgREST anti join)
  *
  * 실제 Supabase와 맞춘 점
  * - 모든 쿼리를 authenticated 역할로 실행한다(RLS·권한이 실제처럼 적용됨)
@@ -12,6 +14,7 @@
  * - 오류는 { message, code }(Postgres 오류 코드, 예: 23505)로 돌려준다
  * - timestamptz는 ISO 문자열, numeric은 숫자로 돌려준다(PostgREST JSON과 같게)
  * - insert는 PostgREST처럼 보낸 컬럼만 넣고 나머지는 DB 기본값을 쓴다
+ * - 관계 조인은 PostgREST처럼 외래 키 칼럼이 유일(PK/unique)하면 객체 또는 null, 아니면 배열
  */
 import type { PGliteInterface } from "@electric-sql/pglite";
 import type { DbRole } from "./pglite-db";
@@ -44,6 +47,41 @@ function columnsSql(columns: string): string {
     .split(",")
     .map((c) => ident(c.trim()))
     .join(", ");
+}
+
+/** 괄호 밖 쉼표로만 나눈다("id, t(a, b)" → ["id", "t(a, b)"]) */
+function splitTopLevel(input: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const ch of input) {
+    if (ch === "(") depth += 1;
+    if (ch === ")") depth -= 1;
+    if (ch === "," && depth === 0) {
+      parts.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+}
+
+interface Embed {
+  table: string;
+  inner: boolean;
+  columns: string;
+}
+
+const EMBED = /^([a-z_][a-z0-9_]*)(!inner)?\((.*)\)$/;
+
+/** 관계 조인: 조인 대상 표(child)의 외래 키 칼럼이 기준 표(parent)의 칼럼을 가리킨다 */
+interface EmbedLink {
+  childColumn: string;
+  parentColumn: string;
+  /** 외래 키 칼럼이 유일하면 한 행(객체 또는 null) */
+  one: boolean;
 }
 
 function normalizeValue(value: unknown): unknown {
@@ -108,6 +146,9 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
   private mode: Mode = "select";
   private columns = "*";
   private returning: string | null = null;
+  private embeds: Embed[] = [];
+  /** is("조인 표", null): 조인 대상이 없는 행만 */
+  private antiJoins: string[] = [];
   private countRequested = false;
   private head = false;
   private single = false;
@@ -126,7 +167,14 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
 
   select(columns = "*", options?: { count?: "exact"; head?: boolean }) {
     if (this.mode === "select") {
-      this.columns = columns;
+      const plain: string[] = [];
+      this.embeds = [];
+      for (const part of splitTopLevel(columns)) {
+        const embed = part.match(EMBED);
+        if (embed) this.embeds.push({ table: embed[1], inner: Boolean(embed[2]), columns: embed[3] });
+        else plain.push(part);
+      }
+      this.columns = plain.join(", ") || "*";
       this.countRequested = options?.count === "exact";
       this.head = options?.head === true;
     } else {
@@ -179,6 +227,10 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
 
   is(column: string, value: null) {
     if (value !== null) throw new Error("[pglite-supabase] is()는 null만 지원");
+    if (this.embeds.some((embed) => embed.table === column)) {
+      this.antiJoins.push(column);
+      return this;
+    }
     this.where.push({ sql: `${ident(column)} is null`, params: [] });
     return this;
   }
@@ -271,7 +323,47 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
     }
   }
 
+  /** 조인 표와 기준 표를 잇는 외래 키(한 칼럼) */
+  private async embedLink(child: string): Promise<EmbedLink> {
+    const [link] = await this.client.run(
+      `select a.attname as child_column, pa.attname as parent_column,
+              exists (
+                select 1 from pg_index i
+                 where i.indrelid = c.conrelid and i.indisunique and i.indnkeyatts = 1 and i.indkey[0] = c.conkey[1]
+              ) as one
+         from pg_constraint c
+         join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+         join pg_attribute pa on pa.attrelid = c.confrelid and pa.attnum = c.confkey[1]
+        where c.contype = 'f' and cardinality(c.conkey) = 1
+          and c.conrelid = $1::regclass and c.confrelid = $2::regclass`,
+      [`public.${child}`, `public.${this.table}`]
+    );
+    if (!link) throw new Error(`[pglite-supabase] 관계 없음: ${this.table} -> ${child}`);
+    return {
+      childColumn: String(link.child_column),
+      parentColumn: String(link.parent_column),
+      one: Boolean(link.one),
+    };
+  }
+
   private async executeSelect(table: string): Promise<PgResponse> {
+    const projections: string[] = [];
+    const embedWhere: string[] = [];
+    for (const embed of this.embeds) {
+      const link = await this.embedLink(embed.table);
+      const child = `public.${ident(embed.table)}`;
+      const joinOn = `${child}.${ident(link.childColumn)} = ${table}.${ident(link.parentColumn)}`;
+      const rowsSql = `select ${columnsSql(embed.columns)} from ${child} where ${joinOn}`;
+      projections.push(
+        link.one
+          ? `(select to_jsonb(e) from (${rowsSql} limit 1) e) as ${ident(embed.table)}`
+          : `coalesce((select jsonb_agg(to_jsonb(e)) from (${rowsSql}) e), '[]'::jsonb) as ${ident(embed.table)}`
+      );
+      if (embed.inner) embedWhere.push(`exists (select 1 from ${child} where ${joinOn})`);
+      if (this.antiJoins.includes(embed.table)) embedWhere.push(`not exists (select 1 from ${child} where ${joinOn})`);
+    }
+    for (const sql of embedWhere) this.where.push({ sql, params: [] });
+
     const where = this.buildWhere(0);
     let count: number | null = null;
     if (this.countRequested) {
@@ -294,7 +386,7 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
 
     const order = this.orders.length > 0 ? ` order by ${this.orders.join(", ")}` : "";
     const rows = await this.client.run(
-      `select ${columnsSql(this.columns)} from ${table}${where.sql}${order} limit ${limit} offset ${from}`,
+      `select ${[this.columns === "*" ? `${table}.*` : columnsSql(this.columns), ...projections].join(", ")} from ${table}${where.sql}${order} limit ${limit} offset ${from}`,
       where.params
     );
     if (this.single) {

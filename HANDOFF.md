@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-26 (feature/admin-tweaks: 공개 주소 수집 요청 체크(018)·업체명 일괄 변경, 운영 미적용·미배포)
+마지막 업데이트: 2026-10-27 (feature/list-copy-check: 랜딩페이지 목록 URL 복사완료 체크, migration 없음·머지·배포 안 함)
 
 ## 배경
 
@@ -833,3 +833,13 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 
 1. 운영 DB 백업 → 018 적용(`begin;`/`commit;` 한 트랜잭션, 테이블 추가만이라 지금 코드와도 함께 동작)
 2. 머지 → 자동 배포 → `/admin/queue` 체크·URL 복사, `/admin/pages` 검색·선택·업체명 바꾸기(시험용 페이지 1개로) 확인
+
+## 랜딩페이지 목록 URL 복사완료 체크 — `feature/list-copy-check` (2026-10-27, migration 없음·운영 DB 접속 없음·배포 안 함)
+
+- 목록 줄마다 [URL 복사] 오른쪽에 [☐ 복사완료](공개 페이지만, 왼쪽 업체명 선택 체크칸과 별개). 복사하면 자동 체크 + "복사됨", 직접 체크·해제 가능, 저장 실패 시 되돌리고 안내
+- 저장은 운영에 이미 있는 `search_submission_checks`(018) 그대로 → 공개 대기열 '공개된 주소' 카드와 같은 체크. 체크 action은 `/admin/queue`·`/admin/pages` 둘 다 갱신
+- 목록 위 필터 전체 / 복사완료 / 안 한 것(`?copy=done|todo`) + "n / 전체 복사완료"(검색 조건에 맞는 공개 페이지 기준). 검색·페이지 나눔과 함께 유지
+- 필터는 서버에서 PostgREST 관계 조인으로: 복사완료 `search_submission_checks!inner(landing_page_id)`, 안 한 것 `search_submission_checks(landing_page_id)` + `.is("search_submission_checks", null)`(anti join, PostgREST 11.1+). '전체'는 기존 조회 그대로 + 화면의 50개만 체크 조회
+- 체크 상태를 못 읽으면 숫자 대신 안내, 체크칸 숨김(목록·URL 복사는 그대로)
+- 테스트: `tests/list-copy-check.db.test.tsx`(PGlite). PGlite 어댑터에 관계 조인(`table(cols)`·`!inner`·`is(table, null)`) 지원 추가
+- ⚠ 관계 조인 문법은 실제 PostgREST(운영)에서는 아직 확인 안 함 — 이 PC에 `.env.local`이 없어 읽기 확인도 못 함. 배포 뒤 `/admin/pages?copy=done`·`?copy=todo` 화면을 한 번 열어 확인할 것
