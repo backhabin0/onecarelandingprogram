@@ -13,6 +13,8 @@ export const MEDIA_LIBRARY_PREFIX = "library/";
 /** 버킷 상한(019)과 같은 2MB. 압축한 뒤 기준 */
 export const MEDIA_MAX_BYTES = 2 * 1024 * 1024;
 export const MEDIA_NAME_MAX_LENGTH = 200;
+/** 사진 설명 — 페이지 사진 설명(alt) 칸과 같은 200자 */
+export const MEDIA_DESCRIPTION_MAX_LENGTH = 200;
 
 export type MediaKind = "photo" | "logo";
 export const MEDIA_KINDS: readonly MediaKind[] = ["photo", "logo"];
@@ -33,6 +35,8 @@ export interface MediaAsset {
   sha256: string;
   kind: MediaKind;
   name: string;
+  /** 짧은 설명. 페이지 사진 설명(alt)이 비면 이 값을 쓴다 */
+  description: string;
   storage_path: string;
   url: string;
   og_storage_path: string;
@@ -104,6 +108,16 @@ export function sanitizeMediaName(fileName: string): string {
   return (cleaned || "사진").slice(0, MEDIA_NAME_MAX_LENGTH);
 }
 
+/** 사진 설명 정리: 제어 문자·줄바꿈을 빼고 공백을 하나로, 200자까지 */
+export function sanitizeMediaDescription(text: string): string {
+  return text
+    .normalize("NFKC")
+    .replace(/[\u0000-\u001f\u007f<>]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MEDIA_DESCRIPTION_MAX_LENGTH);
+}
+
 /** 이름이 겹칠 때 쓰는 이름: "현장1.jpg" → "현장1 (2).jpg" */
 export function numberedMediaName(name: string, n: number): string {
   if (n <= 1) return name;
@@ -117,12 +131,14 @@ export function numberedMediaName(name: string, n: number): string {
 export interface MediaLibraryEntry {
   name: string;
   url: string;
+  /** 보관함 설명(행의 사진 설명이 비면 alt로 쓴다) */
+  description: string;
 }
 
 export type PhotoReference =
   | { kind: "empty" }
   | { kind: "url"; url: string }
-  | { kind: "library"; url: string; name: string }
+  | { kind: "library"; url: string; name: string; description: string }
   | { kind: "not_found"; value: string }
   | { kind: "ambiguous"; value: string; names: string[] }
   | { kind: "invalid_url"; value: string };
@@ -150,11 +166,14 @@ export function resolvePhotoReference(raw: string, library: readonly MediaLibrar
 
   const wanted = normalizeMediaName(value);
   const exact = library.find((entry) => normalizeMediaName(entry.name) === wanted);
-  if (exact) return { kind: "library", url: exact.url, name: exact.name };
+  if (exact) return { kind: "library", url: exact.url, name: exact.name, description: exact.description };
 
   if (mediaBaseName(value) === value) {
     const byBase = library.filter((entry) => normalizeMediaName(mediaBaseName(entry.name)) === wanted);
-    if (byBase.length === 1) return { kind: "library", url: byBase[0].url, name: byBase[0].name };
+    if (byBase.length === 1) {
+      const [entry] = byBase;
+      return { kind: "library", url: entry.url, name: entry.name, description: entry.description };
+    }
     if (byBase.length > 1) return { kind: "ambiguous", value, names: byBase.map((entry) => entry.name) };
   }
   return { kind: "not_found", value };
@@ -174,4 +193,13 @@ export function photoNameCandidates(values: readonly string[]): string[] {
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
   return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+}
+
+/**
+ * 보관함에서 사진을 고른 뒤의 사진 설명(alt): 지금 설명이 비어 있으면 보관함 설명을 쓰고,
+ * 이미 적어 둔 설명은 그대로 둔다.
+ */
+export function altAfterPick(currentAlt: string | null | undefined, asset: { description?: string | null }): string {
+  const current = (currentAlt ?? "").trim();
+  return current ? (currentAlt ?? "") : (asset.description ?? "").trim();
 }

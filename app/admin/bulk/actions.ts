@@ -37,8 +37,8 @@ export async function getBulkCheckContextAction(input: {
 
   const slugs = sanitizeStringList(input.slugs, MAX_UPLOAD_ROWS);
   const keywords = sanitizeStringList(input.keywords, MAX_UPLOAD_ROWS);
-  // 사진 칸은 행마다 3칸까지
-  const photoValues = sanitizeStringList(input.photoValues ?? [], MAX_UPLOAD_ROWS * 3, 500);
+  // 사진 칸은 행마다 4칸까지(사진1~3·로고)
+  const photoValues = sanitizeStringList(input.photoValues ?? [], MAX_UPLOAD_ROWS * 4, 500);
   if (!slugs || !keywords || !photoValues) {
     return { success: false, error: "잘못된 요청입니다." };
   }

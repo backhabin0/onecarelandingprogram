@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import MediaPickerDialog from "@/components/admin/MediaPickerDialog";
-import type { MediaKind } from "@/lib/media/library";
+import { altAfterPick, type MediaKind } from "@/lib/media/library";
 
 const inputClassName =
   "w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
@@ -13,7 +13,8 @@ interface PhotoSlotFieldProps {
   label: string;
   kind: MediaKind;
   url: string;
-  onUrlChange: (url: string) => void;
+  /** 보관함에서 고른 경우 nextAlt: 설명이 비어 있었으면 보관함 설명(설명 칸이 있는 경우만) */
+  onUrlChange: (url: string, nextAlt?: string) => void;
   /** 사진 설명(alt). 로고처럼 설명이 없는 칸은 생략 */
   alt?: string;
   onAltChange?: (alt: string) => void;
@@ -100,7 +101,7 @@ export default function PhotoSlotField({
           title={`${label} 고르기`}
           onClose={() => setPickerOpen(false)}
           onSelect={(asset) => {
-            onUrlChange(asset.url);
+            onUrlChange(asset.url, onAltChange ? altAfterPick(alt, asset) : undefined);
             setPickerOpen(false);
           }}
         />

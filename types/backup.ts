@@ -39,10 +39,13 @@ export const QUEUE_LOCAL_SEO_KEYS = [
 
 /** version 4부터 들어가는 사진 2·3 칸(랜딩페이지·대기열 같음) */
 export const PHOTO_KEYS = ["image_2_url", "image_2_alt", "image_3_url", "image_3_alt"] as const;
+/** 대기열은 version 4부터 사진 2·3 칸 + 로고(공통 사진 설정·엑셀 '로고' 칸) */
+export const QUEUE_PHOTO_KEYS = [...PHOTO_KEYS, "logo_url"] as const;
 
 type LandingPageLocalSeoKey = (typeof LANDING_PAGE_LOCAL_SEO_KEYS)[number];
 type QueueLocalSeoKey = (typeof QUEUE_LOCAL_SEO_KEYS)[number];
 type PhotoKey = (typeof PHOTO_KEYS)[number];
+type QueuePhotoKey = (typeof QUEUE_PHOTO_KEYS)[number];
 
 /**
  * 백업 안의 랜딩페이지. version 1 파일에는 published_at 키가, version 1·2 파일에는
@@ -52,9 +55,9 @@ export type BackupLandingPage = Omit<LandingPage, "published_at" | LandingPageLo
   published_at?: string | null;
 } & Partial<Pick<LandingPage, LandingPageLocalSeoKey | PhotoKey>>;
 
-/** 백업 안의 대기열 행. version 2 파일에는 지역 SEO 칸이, version 3 이하에는 사진 2·3 칸이 없다. */
-export type BackupQueueRow = Omit<LandingPageQueueRow, QueueLocalSeoKey | PhotoKey> &
-  Partial<Pick<LandingPageQueueRow, QueueLocalSeoKey | PhotoKey>>;
+/** 백업 안의 대기열 행. version 2 파일에는 지역 SEO 칸이, version 3 이하에는 사진 2·3·로고 칸이 없다. */
+export type BackupQueueRow = Omit<LandingPageQueueRow, QueueLocalSeoKey | QueuePhotoKey> &
+  Partial<Pick<LandingPageQueueRow, QueueLocalSeoKey | QueuePhotoKey>>;
 
 /** site_profile의 'default' row(version 4부터). 로고 포함 */
 export interface BackupSiteProfile {

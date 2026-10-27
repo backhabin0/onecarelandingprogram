@@ -75,6 +75,7 @@ export interface QueueRowInput {
   image_2_alt: string | null;
   image_3_url: string | null;
   image_3_alt: string | null;
+  logo_url: string | null;
   max_similarity: number | null;
 }
 
@@ -156,9 +157,9 @@ const orNull = (text: string) => (text ? text : null);
 const pairKey = (region: string, keyword: string) => JSON.stringify([region, keyword]);
 const percent = (score: number) => `${Math.floor(score * 100)}%`;
 
-/** 행들의 사진 칸 값(대표 사진 URL·사진2·사진3) — 검사 전에 보관함 이름을 찾을 때 쓴다 */
+/** 행들의 사진 칸 값(대표 사진 URL·사진2·사진3·로고) — 검사 전에 보관함 이름을 찾을 때 쓴다 */
 export function collectPhotoValues(rows: readonly { values: UploadValues }[]): string[] {
-  return rows.flatMap(({ values }) => PHOTO_UPLOAD_FIELDS.map(({ url }) => values[url] ?? "")).filter(Boolean);
+  return rows.flatMap(({ values }) => IMAGE_UPLOAD_SLOTS.map(({ url }) => values[url] ?? "")).filter(Boolean);
 }
 
 /** slug 칸이 비어 있으면 `{region_slug}-{keyword_slug}` */
@@ -213,9 +214,19 @@ function checkRegionKeyword(values: UploadValues, errors: ValidationIssue[]) {
   }
 }
 
+/** 사진 칸 + 로고 칸(로고는 설명 칸이 없음) */
+const IMAGE_UPLOAD_SLOTS: readonly {
+  url: keyof UploadValues;
+  alt?: keyof UploadValues;
+  label: string;
+  urlSubject: string;
+  altSubject?: string;
+}[] = [...PHOTO_UPLOAD_FIELDS, { url: "logoUrl", label: "로고", urlSubject: "로고 주소는" }];
+
 /**
- * 019: 사진 칸(대표 사진 URL·사진2·사진3) 해석. http(s) 주소는 그대로, 그 밖에는 사진 보관함 이름으로 찾는다.
- * 보관함에 없는 이름·주소 형식 오류는 오류로 남기고, 칸 이름(필드) → 저장할 주소를 돌려준다.
+ * 019: 사진 칸(대표 사진 URL·사진2·사진3)과 로고 칸 해석. http(s) 주소는 그대로, 그 밖에는 사진 보관함 이름으로 찾는다.
+ * 보관함에 없는 이름·주소 형식 오류는 오류로 남기고, 칸 이름(필드) → 저장할 값을 돌려준다.
+ * 보관함 사진인데 행의 설명 칸이 비어 있으면 보관함 설명을 설명(alt)으로 쓴다.
  */
 function resolvePhotoFields(
   values: UploadValues,
@@ -223,9 +234,10 @@ function resolvePhotoFields(
   errors: ValidationIssue[]
 ): Partial<Record<keyof UploadValues, string>> {
   const resolved: Partial<Record<keyof UploadValues, string>> = {};
-  for (const { url: field, alt, label, urlSubject, altSubject } of PHOTO_UPLOAD_FIELDS) {
+  for (const { url: field, alt, label, urlSubject, altSubject } of IMAGE_UPLOAD_SLOTS) {
     const raw = v(values, field);
-    if (v(values, alt).length > LOCAL_SEO_MAX_LENGTH.mainImageAlt) {
+    if (alt) resolved[alt] = v(values, alt);
+    if (alt && v(values, alt).length > LOCAL_SEO_MAX_LENGTH.mainImageAlt) {
       errors.push({
         code: "too_long",
         fields: [alt],
@@ -243,8 +255,11 @@ function resolvePhotoFields(
     const reference = resolvePhotoReference(raw, library);
     switch (reference.kind) {
       case "url":
+        resolved[field] = reference.url;
+        break;
       case "library":
         resolved[field] = reference.url;
+        if (alt && !resolved[alt]) resolved[alt] = reference.description.trim();
         break;
       case "invalid_url":
         errors.push({
@@ -533,13 +548,15 @@ export function checkBulkUploadRows(
         city: orNull(v(values, "city")),
         city_slug: orNull(v(values, "citySlug").toLowerCase()),
         // 사진 칸은 보관함 이름을 주소로 바꿔 저장한다(이름을 못 찾은 칸은 오류라 저장되지 않음).
+        // 설명 칸이 비어 있고 보관함 사진이면 보관함 설명이 들어간다.
         main_image_url: orNull(photoUrls.mainImageUrl ?? ""),
-        main_image_alt: orNull(v(values, "mainImageAlt")),
+        main_image_alt: orNull(photoUrls.mainImageAlt ?? ""),
         case_study: orNull(v(values, "caseStudy")),
         image_2_url: orNull(photoUrls.image2Url ?? ""),
-        image_2_alt: orNull(v(values, "image2Alt")),
+        image_2_alt: orNull(photoUrls.image2Alt ?? ""),
         image_3_url: orNull(photoUrls.image3Url ?? ""),
-        image_3_alt: orNull(v(values, "image3Alt")),
+        image_3_alt: orNull(photoUrls.image3Alt ?? ""),
+        logo_url: orNull(photoUrls.logoUrl ?? ""),
         max_similarity: similarity?.score ?? null,
       },
     };

@@ -88,6 +88,7 @@ function queueRow(i: number, overrides: Row = {}): Row {
     image_2_alt: null,
     image_3_url: null,
     image_3_alt: null,
+    logo_url: i % 4 === 0 ? `https://img.example/logo-${i}.png` : null,
     source: i % 2 === 0 ? "ai" : "excel",
     state,
     validation_errors: state === "failed" ? [{ code: "slug_conflict", fields: ["slug"], message: "이미 사용 중인 URL입니다." }] : [],
@@ -178,10 +179,10 @@ describe("백업 파일 읽기", () => {
       landingPage(0).published_at,
       null,
     ]);
-    // version 3 파일에는 사진 2·3 칸이 없다고 보고 읽지 않는다(복구 때 현재 값 유지).
+    // version 3 파일에는 사진 2·3·로고 칸이 없다고 보고 읽지 않는다(복구 때 현재 값 유지).
     const withoutPhotoKeys = (row: Row) => {
-      const { image_2_url, image_2_alt, image_3_url, image_3_alt, ...rest } = row;
-      void [image_2_url, image_2_alt, image_3_url, image_3_alt];
+      const { image_2_url, image_2_alt, image_3_url, image_3_alt, logo_url, ...rest } = row;
+      void [image_2_url, image_2_alt, image_3_url, image_3_alt, logo_url];
       return rest;
     };
     expect(backup.data.publishQueue).toEqual([queueRow(0), queueRow(3)].map(withoutPhotoKeys));

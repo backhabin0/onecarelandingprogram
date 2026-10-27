@@ -8,6 +8,7 @@ import {
   getMediaAssetBySha,
   listMediaAssets,
   registerMediaAsset,
+  updateMediaAssetDescription,
   type RegisterMediaAssetResult,
 } from "@/lib/media-assets";
 import { isMediaKind, isMediaMime, isSha256Hex, type MediaAsset, type MediaKind } from "@/lib/media/library";
@@ -30,6 +31,7 @@ export async function registerMediaAssetAction(input: {
   sha256: unknown;
   kind: unknown;
   fileName: unknown;
+  description?: unknown;
   mime: unknown;
   width: unknown;
   height: unknown;
@@ -40,6 +42,7 @@ export async function registerMediaAssetAction(input: {
     !isMediaKind(input.kind) ||
     typeof input.fileName !== "string" ||
     input.fileName.length > 1000 ||
+    (input.description !== undefined && (typeof input.description !== "string" || input.description.length > 1000)) ||
     !isMediaMime(input.mime) ||
     !isDimension(input.width) ||
     !isDimension(input.height)
@@ -50,6 +53,7 @@ export async function registerMediaAssetAction(input: {
     sha256: input.sha256,
     kind: input.kind,
     fileName: input.fileName,
+    description: typeof input.description === "string" ? input.description : "",
     mime: input.mime,
     width: input.width,
     height: input.height,
@@ -69,6 +73,20 @@ export async function listMediaAssetsAction(input: {
   const search = typeof input.search === "string" ? input.search.slice(0, 200) : "";
   const page = typeof input.page === "number" && Number.isInteger(input.page) && input.page > 0 ? input.page : 1;
   return listMediaAssets({ search, kind, page, pageSize: 24 });
+}
+
+/** 보관함 사진 설명 바꾸기(200자까지, 제어 문자·줄바꿈은 정리) */
+export async function updateMediaAssetDescriptionAction(
+  id: unknown,
+  description: unknown
+): Promise<{ success: boolean; asset?: MediaAsset; error?: string }> {
+  await requireUser();
+  if (!isUuid(id) || typeof description !== "string" || description.length > 1000) {
+    return { success: false, error: "잘못된 요청입니다." };
+  }
+  const result = await updateMediaAssetDescription(id, description);
+  if (result.success) revalidatePath("/admin/media");
+  return result;
 }
 
 /** 보관함 사진 삭제(쓰는 곳이 있으면 거절) */

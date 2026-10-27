@@ -6,10 +6,12 @@
 -- 1) media_assets: 보관함 사진 목록. 브라우저에서 압축한 파일을 library/{sha256}.webp 에 한 번만 저장하고,
 --    og:image용 1200×630 JPEG(library/{sha256}-og.jpg)도 함께 둔다. sha256은 원본 파일 내용의 해시라
 --    같은 사진을 다시 올리면 새로 저장하지 않고 기존 행을 쓴다.
+--    사진마다 짧은 설명(description)을 두고, 페이지 사진 설명(alt)이 비어 있으면 이 설명을 쓴다.
 -- 2) 사진 2·3 칸(사진 1 = 기존 main_image_url / main_image_alt 그대로): landing_pages, landing_page_queue
 -- 3) site_profile.logo_url: 대표 업체 로고(페이지 로고가 비어 있고 업체명이 대표 업체와 같은 페이지가 씀)
+--    landing_page_queue.logo_url: 대량 등록 공통 사진 설정·엑셀 '로고' 칸의 페이지 로고(공개할 때 페이지로 복사)
 -- 4) Storage: 버킷 파일 상한 10MB → 2MB(압축 후 기준), 업로드 경로를 library/ 와 landing-pages/ 로만 제한
--- 5) publish_queued_landing_pages: 사진 2·3도 공개 페이지로 복사, 얇은 페이지 판단에 사진 2·3 포함
+-- 5) publish_queued_landing_pages: 사진 2·3·로고도 공개 페이지로 복사, 얇은 페이지 판단에 사진 2·3 포함
 --    (그 밖의 동작은 016과 같다)
 
 -- ============================================================
@@ -24,6 +26,8 @@ create table if not exists public.media_assets (
   kind text not null check (kind in ('photo', 'logo')),
   -- 관리자가 보는 이름(올린 파일 이름). 엑셀 사진 칸에 이 이름을 쓴다. 대소문자 무시하고 겹치지 않게 둔다.
   name text not null check (char_length(name) between 1 and 200),
+  -- 짧은 설명(예: 정화조 작업 현장). 페이지 사진 설명(alt)이 비어 있으면 이 값을 쓰고, AI 프롬프트에도 넣는다.
+  description text not null default '' check (char_length(description) <= 200),
   -- 브라우저가 WebP를 못 만들면 JPEG(사진)·PNG(로고)로 저장한다.
   storage_path text not null unique check (storage_path ~ '^library/[0-9a-f]{64}\.(webp|jpg|png)$'),
   url text not null unique check (char_length(url) <= 500),
@@ -59,6 +63,15 @@ create policy "Authenticated can insert media_assets"
   to authenticated
   with check (true);
 
+-- 수정은 설명(description)만 쓴다(화면·Server Action이 다른 칸을 바꾸지 않음).
+drop policy if exists "Authenticated can update media_assets" on public.media_assets;
+create policy "Authenticated can update media_assets"
+  on public.media_assets
+  for update
+  to authenticated
+  using (true)
+  with check (true);
+
 drop policy if exists "Authenticated can delete media_assets" on public.media_assets;
 create policy "Authenticated can delete media_assets"
   on public.media_assets
@@ -80,7 +93,8 @@ alter table public.landing_page_queue
   add column if not exists image_2_url text check (char_length(image_2_url) <= 500),
   add column if not exists image_2_alt text check (char_length(image_2_alt) <= 200),
   add column if not exists image_3_url text check (char_length(image_3_url) <= 500),
-  add column if not exists image_3_alt text check (char_length(image_3_alt) <= 200);
+  add column if not exists image_3_alt text check (char_length(image_3_alt) <= 200),
+  add column if not exists logo_url text check (char_length(logo_url) <= 500);
 
 alter table public.site_profile
   add column if not exists logo_url text check (char_length(logo_url) <= 500);
@@ -192,7 +206,7 @@ begin
         business_name, title, slug, hero_text, description, phone,
         kakao_url, address, template, status, published_at,
         region, keyword, city, city_slug, main_image_url, main_image_alt, case_study,
-        image_2_url, image_2_alt, image_3_url, image_3_alt
+        image_2_url, image_2_alt, image_3_url, image_3_alt, logo_url
       )
       values (
         v_item.business_name, v_item.title, v_item.slug, v_item.hero_text,
@@ -200,7 +214,7 @@ begin
         v_item.template, 'public', now(),
         v_item.region, v_item.keyword, v_item.city, v_item.city_slug,
         v_item.main_image_url, v_item.main_image_alt, v_item.case_study,
-        v_item.image_2_url, v_item.image_2_alt, v_item.image_3_url, v_item.image_3_alt
+        v_item.image_2_url, v_item.image_2_alt, v_item.image_3_url, v_item.image_3_alt, v_item.logo_url
       )
       returning id into v_page_id;
     exception

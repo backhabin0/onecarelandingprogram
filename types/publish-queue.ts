@@ -51,6 +51,8 @@ export interface LandingPageQueueRow {
   image_2_alt: string | null;
   image_3_url: string | null;
   image_3_alt: string | null;
+  /** 페이지 로고(019, 공통 사진 설정·엑셀 '로고' 칸) — 공개할 때 페이지로 복사 */
+  logo_url: string | null;
   source: LandingPageQueueSource;
   state: LandingPageQueueState;
   /** 앱 검증 결과나 공개 실패 사유(배열). 형식은 lib/landing-page-validation.ts의 ValidationIssue */

@@ -9,6 +9,7 @@ import type { ConsultationRequest } from "@/types/consultation-request";
 import {
   LANDING_PAGE_LOCAL_SEO_KEYS,
   PHOTO_KEYS,
+  QUEUE_PHOTO_KEYS,
   QUEUE_LOCAL_SEO_KEYS,
   type BackupEventRow,
   type BackupFile,
@@ -792,7 +793,7 @@ export async function executeMergeRestore(
           landing_page_id: r.landing_page_id,
           batch_id: r.batch_id,
           ...presentKeys(r, QUEUE_LOCAL_SEO_KEYS),
-          ...presentKeys(r, PHOTO_KEYS),
+          ...presentKeys(r, QUEUE_PHOTO_KEYS),
           created_at: r.created_at,
         })),
         { onConflict: "id" }

@@ -2,7 +2,7 @@
 
 import { useRef, useState, type ChangeEvent } from "react";
 import { HEIC_MESSAGE, isHeicFile } from "@/lib/media/compress";
-import { MEDIA_KIND_LABEL, type MediaAsset, type MediaKind } from "@/lib/media/library";
+import { MEDIA_DESCRIPTION_MAX_LENGTH, MEDIA_KIND_LABEL, type MediaAsset, type MediaKind } from "@/lib/media/library";
 import { uploadToLibrary } from "@/lib/media/upload-client";
 
 const fileInputClassName =
@@ -47,6 +47,8 @@ export default function MediaUploadInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const [lines, setLines] = useState<UploadLine[]>([]);
   const [busy, setBusy] = useState(false);
+  // 이번에 올리는 사진 모두에 붙일 설명(나중에 보관함에서 사진마다 고칠 수 있음)
+  const [description, setDescription] = useState("");
 
   const update = (index: number, line: Partial<UploadLine>) =>
     setLines((current) => current.map((item, i) => (i === index ? { ...item, ...line } : item)));
@@ -63,7 +65,7 @@ export default function MediaUploadInput({
         continue;
       }
       update(index, { status: "uploading" });
-      const result = await uploadToLibrary(file, kind);
+      const result = await uploadToLibrary(file, kind, description);
       if ("error" in result) {
         update(index, { status: "error", message: result.error });
         continue;
@@ -76,12 +78,25 @@ export default function MediaUploadInput({
     }
 
     if (inputRef.current) inputRef.current.value = "";
+    setDescription("");
     setBusy(false);
     onFinished?.();
   };
 
   return (
     <div className="flex flex-col gap-2">
+      <label htmlFor={`${inputId}-description`} className="text-sm font-medium text-slate-700">
+        설명 <span className="font-normal text-slate-400">(선택, 예: 정화조 작업 현장 · 사진 설명(alt)으로도 쓰임)</span>
+      </label>
+      <input
+        id={`${inputId}-description`}
+        value={description}
+        maxLength={MEDIA_DESCRIPTION_MAX_LENGTH}
+        disabled={busy}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder={multiple ? "이번에 올리는 사진 모두에 붙습니다(나중에 사진마다 고칠 수 있음)" : "사진 설명"}
+        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+      />
       <label htmlFor={inputId} className="text-sm font-medium text-slate-700">
         {MEDIA_KIND_LABEL[kind]} {multiple ? "여러 장 올리기" : "새로 올리기"}
       </label>

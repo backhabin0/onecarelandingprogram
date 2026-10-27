@@ -14,6 +14,7 @@ import {
   LOCAL_SEO_MAX_LENGTH,
   SEO_MAX_LENGTH,
 } from "@/lib/landing-page-validation";
+import { altAfterPick } from "@/lib/media/library";
 import { mockTemplates } from "@/lib/mock-data";
 import { QUEUE_STATE_LABELS } from "@/lib/publish-queue-labels";
 import type { LandingPageQueueState } from "@/types/publish-queue";
@@ -37,8 +38,10 @@ interface TextField {
   maxLength?: number;
   hint?: string;
   multiline?: boolean;
-  /** 019: 사진 칸 — "보관함에서 고르기" 버튼을 붙인다 */
-  photo?: boolean;
+  /** 019: 사진 칸 — "보관함에서 고르기" 버튼을 붙인다(로고 칸은 로고를 고른다) */
+  photo?: boolean | "logo";
+  /** 사진 칸의 설명 칸 — 보관함에서 고를 때 비어 있으면 보관함 설명을 넣는다 */
+  alt?: BulkUploadField;
 }
 
 const BASIC_FIELDS: TextField[] = [
@@ -63,14 +66,22 @@ const BASIC_FIELDS: TextField[] = [
     label: "대표 사진 URL",
     maxLength: LOCAL_SEO_MAX_LENGTH.mainImageUrl,
     photo: true,
+    alt: "mainImageAlt",
     hint: "보관함 이름 또는 http(s) 주소",
   },
   { field: "mainImageAlt", label: "사진 설명(alt)", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageAlt, hint: "비우면 '지역 키워드 현장'으로 자동" },
   { field: "caseStudy", label: "현장 사례", maxLength: LOCAL_SEO_MAX_LENGTH.caseStudy, multiline: true, hint: "직접 다녀온 현장 이야기(선택)" },
-  { field: "image2Url", label: "사진2", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageUrl, photo: true, hint: "보관함 이름 또는 http(s) 주소" },
+  { field: "image2Url", label: "사진2", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageUrl, photo: true, alt: "image2Alt", hint: "보관함 이름 또는 http(s) 주소" },
   { field: "image2Alt", label: "사진2 설명", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageAlt },
-  { field: "image3Url", label: "사진3", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageUrl, photo: true, hint: "보관함 이름 또는 http(s) 주소" },
+  { field: "image3Url", label: "사진3", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageUrl, photo: true, alt: "image3Alt", hint: "보관함 이름 또는 http(s) 주소" },
   { field: "image3Alt", label: "사진3 설명", maxLength: LOCAL_SEO_MAX_LENGTH.mainImageAlt },
+  {
+    field: "logoUrl",
+    label: "로고",
+    maxLength: LOCAL_SEO_MAX_LENGTH.mainImageUrl,
+    photo: "logo",
+    hint: "보관함 이름 또는 http(s) 주소. 비우면 업체명이 대표 업체와 같을 때 대표 로고",
+  },
 ];
 
 const FAQ_FIELDS = [1, 2, 3] as const;
@@ -152,11 +163,16 @@ export default function QueueItemForm({ id, initialValues, currentState }: Queue
     <form onSubmit={handleSubmit} className="flex flex-col gap-6">
       {pickerField ? (
         <MediaPickerDialog
-          kind="photo"
+          kind={pickerField.photo === "logo" ? "logo" : "photo"}
           title={`${pickerField.label} 고르기`}
           onClose={() => setPickerField(null)}
           onSelect={(asset) => {
-            set(pickerField.field, asset.url);
+            const altField = pickerField.alt;
+            setValues((current) => ({
+              ...current,
+              [pickerField.field]: asset.url,
+              ...(altField ? { [altField]: altAfterPick(current[altField], asset) } : {}),
+            }));
             setPickerField(null);
           }}
         />

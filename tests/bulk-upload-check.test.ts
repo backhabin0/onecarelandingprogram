@@ -102,6 +102,7 @@ describe("행 검사", () => {
       image_2_alt: null,
       image_3_url: null,
       image_3_alt: null,
+      logo_url: null,
       max_similarity: null,
     });
     expect(decideQueueState(result.rows[0], false)).toBe("ready");

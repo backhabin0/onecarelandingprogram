@@ -10,7 +10,8 @@ import { findMediaAssetByShaAction, registerMediaAssetAction } from "@/app/admin
  */
 export async function uploadToLibrary(
   file: File,
-  kind: MediaKind
+  kind: MediaKind,
+  description = ""
 ): Promise<{ asset: MediaAsset; reused: boolean } | { error: string }> {
   let compressed;
   try {
@@ -44,6 +45,7 @@ export async function uploadToLibrary(
     sha256: compressed.sha256,
     kind,
     fileName: file.name,
+    description,
     mime: compressed.mime,
     width: compressed.width,
     height: compressed.height,

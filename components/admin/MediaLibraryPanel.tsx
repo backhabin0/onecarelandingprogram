@@ -4,6 +4,7 @@ import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Card from "@/components/admin/Card";
 import MediaUploadInput from "@/components/admin/MediaUploadInput";
+import MediaDescriptionField from "@/components/admin/MediaDescriptionField";
 import { deleteMediaAssetAction } from "@/app/admin/media/actions";
 import { MEDIA_KIND_LABEL, formatBytes, type MediaAsset, type MediaKind } from "@/lib/media/library";
 
@@ -114,7 +115,7 @@ export default function MediaLibraryPanel({ items, usedCounts, usageError, searc
               <input
                 id="media-search"
                 className={inputClassName}
-                placeholder="사진 이름"
+                placeholder="사진 이름·설명"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
               />
@@ -148,7 +149,8 @@ export default function MediaLibraryPanel({ items, usedCounts, usageError, searc
         ) : null}
         {usageError ? <p className="text-sm text-amber-700">{usageError} 지금은 삭제할 수 없습니다.</p> : null}
         <p className="text-xs text-slate-500">
-          엑셀 대량 등록의 사진 칸(대표 사진 URL·사진2·사진3)에 아래 이름을 그대로 쓰면 그 사진이 들어갑니다.
+          엑셀 대량 등록의 사진 칸(대표 사진 URL·사진2·사진3·로고)에 아래 이름을 그대로 쓰면 그 사진이 들어갑니다.
+          설명은 페이지 사진 설명(alt)이 비어 있을 때 대신 쓰이고, AI 프롬프트의 사진 목록에도 들어갑니다.
         </p>
 
         {items.length === 0 ? (
@@ -165,12 +167,13 @@ export default function MediaLibraryPanel({ items, usedCounts, usageError, searc
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={asset.url}
-                      alt={asset.name}
+                      alt={asset.description || asset.name}
                       loading="lazy"
                       className={`h-full w-full ${asset.kind === "logo" ? "object-contain" : "object-cover"}`}
                     />
                   </div>
                   <p className="break-all text-sm font-medium text-slate-900">{asset.name}</p>
+                  <MediaDescriptionField asset={asset} />
                   <p className="text-xs text-slate-500">
                     {MEDIA_KIND_LABEL[asset.kind]} · {asset.width}×{asset.height} · {formatBytes(asset.bytes + asset.og_bytes)}
                   </p>

@@ -24,6 +24,7 @@ export const IMAGE_REFERENCE_COLUMNS: readonly ImageReferenceColumn[] = [
   { table: "landing_page_queue", column: "main_image_url", key: "id", label: "대기열 사진1", unpublishedOnly: true },
   { table: "landing_page_queue", column: "image_2_url", key: "id", label: "대기열 사진2", unpublishedOnly: true },
   { table: "landing_page_queue", column: "image_3_url", key: "id", label: "대기열 사진3", unpublishedOnly: true },
+  { table: "landing_page_queue", column: "logo_url", key: "id", label: "대기열 로고", unpublishedOnly: true },
   { table: "site_profile", column: "logo_url", key: "id", label: "대표 업체 로고" },
 ];
 

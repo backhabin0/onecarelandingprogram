@@ -181,7 +181,8 @@ alter table public.landing_page_queue
   drop column if exists image_2_url,
   drop column if exists image_2_alt,
   drop column if exists image_3_url,
-  drop column if exists image_3_alt;
+  drop column if exists image_3_alt,
+  drop column if exists logo_url;
 
 alter table public.landing_pages
   drop column if exists image_2_url,

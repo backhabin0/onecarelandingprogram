@@ -345,14 +345,14 @@ describe("보관함 규칙·압축 계산", () => {
 
   it("엑셀 사진 칸 해석: 주소는 그대로, 이름은 대소문자·확장자 없이도 찾고, 없거나 여럿이면 오류", () => {
     const library = [
-      { name: "현장1.jpg", url: libUrl(1) },
-      { name: "현장2.jpg", url: libUrl(2) },
-      { name: "현장2.png", url: libUrl(3) },
+      { name: "현장1.jpg", url: libUrl(1), description: "" },
+      { name: "현장2.jpg", url: libUrl(2), description: "" },
+      { name: "현장2.png", url: libUrl(3), description: "" },
     ];
     expect(resolvePhotoReference("", library)).toEqual({ kind: "empty" });
     expect(resolvePhotoReference(" https://img.example/a.jpg ", library)).toEqual({ kind: "url", url: "https://img.example/a.jpg" });
-    expect(resolvePhotoReference("현장1.JPG", library)).toEqual({ kind: "library", url: libUrl(1), name: "현장1.jpg" });
-    expect(resolvePhotoReference("현장1", library)).toEqual({ kind: "library", url: libUrl(1), name: "현장1.jpg" });
+    expect(resolvePhotoReference("현장1.JPG", library)).toEqual({ kind: "library", url: libUrl(1), name: "현장1.jpg", description: "" });
+    expect(resolvePhotoReference("현장1", library)).toEqual({ kind: "library", url: libUrl(1), name: "현장1.jpg", description: "" });
     expect(resolvePhotoReference("현장2", library)).toMatchObject({ kind: "ambiguous", names: ["현장2.jpg", "현장2.png"] });
     expect(resolvePhotoReference("현장2.png", library)).toMatchObject({ kind: "library", url: libUrl(3) });
     expect(resolvePhotoReference("없는사진.jpg", library)).toEqual({ kind: "not_found", value: "없는사진.jpg" });
@@ -780,12 +780,12 @@ describe("랜딩 화면 사진 갤러리·로고·og:image·구조화 데이터"
 
 describe("엑셀 사진2·3 칸", () => {
   const HEADERS = BULK_UPLOAD_COLUMNS.map((c) => c.header);
-  const ctx = (mediaLibrary = [] as { name: string; url: string }[]) => ({
+  const ctx = (library = [] as { name: string; url: string; description?: string }[]) => ({
     existingSlugs: [],
     existingPairs: [],
     corpus: [],
     thresholds: DEFAULT_SIMILARITY_THRESHOLDS,
-    mediaLibrary,
+    mediaLibrary: library.map((entry) => ({ description: "", ...entry })),
   });
   const base = (patch: Record<string, string> = {}) => ({
     region: "산본동",
@@ -797,7 +797,7 @@ describe("엑셀 사진2·3 칸", () => {
     description: "가".repeat(220),
     ...patch,
   });
-  const check = (values: Record<string, string>, library?: { name: string; url: string }[]) =>
+  const check = (values: Record<string, string>, library?: { name: string; url: string; description?: string }[]) =>
     checkBulkUploadRows([{ rowNumber: 2, values, warnings: [] }], ctx(library)).rows[0];
 
   it("양식 맨 뒤 4칸 = 사진2, 사진2 설명, 사진3, 사진3 설명(AI가 비워 두는 칸)", () => {
@@ -827,7 +827,7 @@ describe("엑셀 사진2·3 칸", () => {
       base({ mainImageUrl: "대표.jpg", image2Url: "현장1", image2Alt: "작업 중", image3Url: "https://img.example/3.jpg" }),
       [
         { name: "대표.jpg", url: libUrl(1) },
-        { name: "현장1.jpg", url: libUrl(2) },
+        { name: "현장1.jpg", url: libUrl(2), description: "" },
       ]
     );
     expect(row.errors).toEqual([]);
@@ -851,8 +851,8 @@ describe("엑셀 사진2·3 칸", () => {
       },
     ]);
     const ambiguous = check(base({ image3Url: "현장" }), [
-      { name: "현장.jpg", url: libUrl(1) },
-      { name: "현장.png", url: libUrl(2) },
+      { name: "현장.jpg", url: libUrl(1), description: "" },
+      { name: "현장.png", url: libUrl(2), description: "" },
     ]);
     expect(ambiguous.errors.map((e) => e.code)).toEqual(["photo_ambiguous"]);
     expect(check(base({ mainImageUrl: "img.example/a.jpg" })).errors.map((e) => e.message)).toEqual([
@@ -905,7 +905,7 @@ describe("엑셀 사진2·3 칸", () => {
     await insertAsset(1, "현장1.jpg");
     await insertAsset(2, "다른.jpg");
     const { data } = await getMediaLibraryEntries(["현장1"]);
-    expect(data).toEqual([{ name: "현장1.jpg", url: libUrl(1) }]);
+    expect(data).toEqual([{ name: "현장1.jpg", url: libUrl(1), description: "" }]);
     expect((await getMediaLibraryEntries([])).data).toEqual([]);
   });
 });
@@ -997,6 +997,7 @@ describe("백업 version 4", () => {
     sha256: sha(n),
     kind: "photo",
     name,
+    description: "",
     storage_path: `library/${sha(n)}.webp`,
     url: libUrl(n),
     og_storage_path: `library/${sha(n)}-og.jpg`,
@@ -1106,6 +1107,7 @@ describe("관리자 화면(정적 렌더링)", () => {
     sha256: sha(n),
     kind: "photo" as const,
     name,
+    description: "",
     storage_path: `library/${sha(n)}.webp`,
     url: libUrl(n),
     og_storage_path: `library/${sha(n)}-og.jpg`,
@@ -1154,12 +1156,14 @@ describe("관리자 화면(정적 렌더링)", () => {
     expect(create).not.toContain("사진 저장");
   });
 
-  it("대기열 수정 화면: 사진2·3과 설명 칸, 사진 칸마다 '보관함에서 고르기'", () => {
+  it("대기열 수정 화면: 사진2·3과 설명 칸·로고 칸, 사진 칸마다 '보관함에서 고르기'", () => {
     const html = renderToStaticMarkup(<QueueItemForm id="x" initialValues={{ image2Url: libUrl(2) }} currentState="ready" />);
     expect(html).toContain('id="queue-image2Url"');
     expect(html).toContain('id="queue-image3Alt"');
     expect(html).toContain(`value="${libUrl(2)}"`);
-    expect(Array.from(html.matchAll(/보관함에서 고르기/g))).toHaveLength(3);
+    expect(html).toContain('id="queue-logoUrl"');
+    // 사진1~3 + 로고
+    expect(Array.from(html.matchAll(/보관함에서 고르기/g))).toHaveLength(4);
   });
 
   it("관리자 메뉴에 '사진 보관함'", () => {

@@ -33,6 +33,7 @@ export type BulkUploadField =
   | "image2Alt"
   | "image3Url"
   | "image3Alt"
+  | "logoUrl"
   | "slug";
 
 export interface BulkUploadColumn {
@@ -129,6 +130,8 @@ export const CUSTOMER_ONLY_FIELDS: readonly BulkUploadField[] = [
  */
 export const OPTIONAL_UPLOAD_COLUMNS: readonly BulkUploadColumn[] = [
   { field: "slug", header: "URL Slug", example: "", width: 20 },
+  // 페이지 로고(보관함 이름 또는 http(s) 주소). 올리기 화면의 공통 사진 설정 로고도 이 칸으로 들어간다.
+  { field: "logoUrl", header: "로고", example: "", width: 24 },
 ];
 
 /** 이 머리글이 하나라도 없으면 파일 전체를 거부한다 */

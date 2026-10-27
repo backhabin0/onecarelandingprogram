@@ -24,6 +24,7 @@ import {
   type BackupQueueRow,
   LANDING_PAGE_LOCAL_SEO_KEYS,
   PHOTO_KEYS,
+  QUEUE_PHOTO_KEYS,
   QUEUE_LOCAL_SEO_KEYS,
   type BackupMediaAsset,
   type BackupSiteProfile,
@@ -285,6 +286,9 @@ function sanitizeMediaAsset(item: unknown): BackupMediaAsset | null {
   const r = item;
   if (!isUuid(r.id) || !isSha256Hex(r.sha256) || !isMediaKind(r.kind) || !isMediaMime(r.mime)) return null;
   if (!isString(r.name) || r.name.length < 1 || r.name.length > 200) return null;
+  // 설명은 없으면 빈 값(설명 칸이 생기기 전 개발 중 파일)
+  const description = r.description === undefined ? "" : r.description;
+  if (!isString(description) || description.length > 200) return null;
   if (!isString(r.storage_path) || !isString(r.og_storage_path) || !isString(r.url) || !isString(r.og_url)) return null;
   if (!r.storage_path.startsWith(`library/${r.sha256}.`) || r.og_storage_path !== `library/${r.sha256}-og.jpg`) return null;
   if (!isPositiveInt(r.width, 4096) || !isPositiveInt(r.height, 4096)) return null;
@@ -295,6 +299,7 @@ function sanitizeMediaAsset(item: unknown): BackupMediaAsset | null {
     sha256: r.sha256,
     kind: r.kind,
     name: r.name,
+    description,
     storage_path: r.storage_path,
     url: r.url,
     og_storage_path: r.og_storage_path,
@@ -384,7 +389,7 @@ function sanitizeQueueRow(item: unknown, version: number): BackupQueueRow | null
   const r = item;
   const localSeo = pickNullableStrings(r, QUEUE_LOCAL_SEO_KEYS, version >= 3);
   if (!localSeo) return null;
-  const photos = pickNullableStrings(r, PHOTO_KEYS, version >= 4);
+  const photos = pickNullableStrings(r, QUEUE_PHOTO_KEYS, version >= 4);
   if (!photos) return null;
 
   if (!isUuid(r.id)) return null;

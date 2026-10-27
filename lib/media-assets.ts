@@ -17,6 +17,7 @@ import {
   mediaBaseName,
   normalizeMediaName,
   numberedMediaName,
+  sanitizeMediaDescription,
   sanitizeMediaName,
   type MediaAsset,
   type MediaKind,
@@ -54,7 +55,7 @@ export async function listMediaAssets(filter: {
     const build = (head: boolean) => {
       let query = supabase.from("media_assets").select(head ? "id" : "*", { count: "exact", head });
       if (filter.kind && filter.kind !== "all") query = query.eq("kind", filter.kind);
-      if (term) query = query.or(ilikeAnyFilter(["name"], term));
+      if (term) query = query.or(ilikeAnyFilter(["name", "description"], term));
       return query;
     };
 
@@ -143,7 +144,7 @@ export async function getMediaLibraryEntries(
   try {
     const supabase = await getSupabaseServerClient();
     const { data, error } = await fetchAllRows<MediaLibraryEntry>((from, to) =>
-      supabase.from("media_assets").select("name, url").order("id", { ascending: true }).range(from, to)
+      supabase.from("media_assets").select("name, url, description").order("id", { ascending: true }).range(from, to)
     );
     if (error) {
       // 019 적용 전에도 주소(URL)로 쓴 사진 칸은 검사할 수 있도록 빈 보관함으로 본다.
@@ -163,10 +164,64 @@ export async function getMediaLibraryEntries(
   }
 }
 
+/**
+ * AI 프롬프트용 보관함 사진 목록(로고 빼고, 이름 순). 이름과 설명만 1,000행씩 끝까지 읽는다.
+ */
+export async function getLibraryPhotosForPrompt(): Promise<{
+  data: { name: string; description: string }[];
+  error: string | null;
+}> {
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await fetchAllRows<{ name: string; description: string }>((from, to) =>
+      supabase
+        .from("media_assets")
+        .select("name, description")
+        .eq("kind", "photo")
+        .order("name", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
+    if (error) {
+      console.error("[media] prompt photos error:", error);
+      return { data: [], error: "사진 보관함 목록을 불러오지 못했습니다." };
+    }
+    return { data, error: null };
+  } catch {
+    return { data: [], error: "사진 보관함 목록을 불러오지 못했습니다." };
+  }
+}
+
+/** 보관함 사진 설명 바꾸기(설명만 고친다) */
+export async function updateMediaAssetDescription(
+  id: string,
+  description: string
+): Promise<{ success: boolean; asset?: MediaAsset; error?: string }> {
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("media_assets")
+      .update({ description: sanitizeMediaDescription(description) })
+      .eq("id", id)
+      .select("*");
+    if (error) {
+      console.error("[media] update description error:", error.message);
+      return { success: false, error: "설명을 저장하지 못했습니다." };
+    }
+    const [asset] = (data as MediaAsset[] | null) ?? [];
+    if (!asset) return { success: false, error: "사진을 찾을 수 없습니다. 목록을 새로고침해주세요." };
+    return { success: true, asset };
+  } catch {
+    return { success: false, error: "설명을 저장하지 못했습니다." };
+  }
+}
+
 export interface RegisterMediaAssetInput {
   sha256: string;
   kind: MediaKind;
   fileName: string;
+  /** 올릴 때 적은 설명(선택) */
+  description?: string;
   mime: MediaMime;
   width: number;
   height: number;
@@ -213,15 +268,23 @@ async function findUploadedFiles(
 
 const NAME_ATTEMPTS = 50;
 
+/** 같은 사진을 다시 올리면서 설명을 적었고 기존 설명이 비어 있으면 채운다(있는 설명은 덮어쓰지 않음) */
+async function fillEmptyDescription(asset: MediaAsset, description: string): Promise<MediaAsset> {
+  if (!description || asset.description) return asset;
+  const updated = await updateMediaAssetDescription(asset.id, description);
+  return updated.asset ?? asset;
+}
+
 /**
  * 올라간 파일을 보관함 목록에 등록한다. 주소·경로는 서버가 sha256으로 직접 만든다(브라우저가 보낸
  * 주소를 믿지 않음). 이름이 겹치면 "이름 (2).jpg"처럼 번호를 붙인다. 같은 사진(sha256)이 이미
  * 있으면 그 행을 그대로 돌려준다.
  */
 export async function registerMediaAsset(input: RegisterMediaAssetInput): Promise<RegisterMediaAssetResult> {
+  const description = sanitizeMediaDescription(input.description ?? "");
   const existing = await getMediaAssetBySha(input.sha256);
   if (existing.error) return { success: false, error: existing.error };
-  if (existing.data) return { success: true, asset: existing.data, reused: true };
+  if (existing.data) return { success: true, asset: await fillEmptyDescription(existing.data, description), reused: true };
 
   const uploaded = await findUploadedFiles(input.sha256, input.mime);
   if ("error" in uploaded) return { success: false, error: uploaded.error };
@@ -239,6 +302,7 @@ export async function registerMediaAsset(input: RegisterMediaAssetInput): Promis
           sha256: input.sha256,
           kind: input.kind,
           name: numberedMediaName(baseName, n),
+          description,
           storage_path: path,
           url: buildPublicStorageUrl(supabaseUrl, path),
           og_storage_path: ogPath,
@@ -259,7 +323,7 @@ export async function registerMediaAsset(input: RegisterMediaAssetInput): Promis
       }
       // 같은 사진을 그 사이 다른 창에서 등록했으면 그 행을 쓴다. 아니면 이름이 겹친 것 → 다음 번호.
       const again = await getMediaAssetBySha(input.sha256);
-      if (again.data) return { success: true, asset: again.data, reused: true };
+      if (again.data) return { success: true, asset: await fillEmptyDescription(again.data, description), reused: true };
     }
     return { success: false, error: "같은 이름의 사진이 너무 많습니다. 파일 이름을 바꿔 올려주세요." };
   } catch (err) {

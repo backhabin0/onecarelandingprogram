@@ -39,6 +39,14 @@ export default function LandingPagePhotosCard({ photos, onChange, landingPageId 
     onChange({ ...photos, [field]: value });
   };
 
+  /** 사진 칸: 주소와 (보관함에서 고른 경우) 비어 있던 설명을 한 번에 바꾼다 */
+  const setPhoto =
+    (urlField: keyof LandingPagePhotosInput, altField: keyof LandingPagePhotosInput) =>
+    (url: string, nextAlt?: string) => {
+      setMessage(null);
+      onChange({ ...photos, [urlField]: url, ...(nextAlt !== undefined ? { [altField]: nextAlt } : {}) });
+    };
+
   const handleSave = () => {
     if (!landingPageId || isSaving) return;
     setMessage(null);
@@ -78,7 +86,7 @@ export default function LandingPagePhotosCard({ photos, onChange, landingPageId 
           label="사진1(대표)"
           kind="photo"
           url={photos.mainImageUrl}
-          onUrlChange={set("mainImageUrl")}
+          onUrlChange={setPhoto("mainImageUrl", "mainImageAlt")}
           alt={photos.mainImageAlt}
           onAltChange={set("mainImageAlt")}
           altMaxLength={altMax}
@@ -90,7 +98,7 @@ export default function LandingPagePhotosCard({ photos, onChange, landingPageId 
           label="사진2"
           kind="photo"
           url={photos.image2Url}
-          onUrlChange={set("image2Url")}
+          onUrlChange={setPhoto("image2Url", "image2Alt")}
           alt={photos.image2Alt}
           onAltChange={set("image2Alt")}
           altMaxLength={altMax}
@@ -102,7 +110,7 @@ export default function LandingPagePhotosCard({ photos, onChange, landingPageId 
           label="사진3"
           kind="photo"
           url={photos.image3Url}
-          onUrlChange={set("image3Url")}
+          onUrlChange={setPhoto("image3Url", "image3Alt")}
           alt={photos.image3Alt}
           onAltChange={set("image3Alt")}
           altMaxLength={altMax}

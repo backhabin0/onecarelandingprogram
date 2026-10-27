@@ -364,5 +364,6 @@ export function queueRowToValues(row: LandingPageQueueRow): UploadValues {
     image2Alt: row.image_2_alt ?? "",
     image3Url: row.image_3_url ?? "",
     image3Alt: row.image_3_alt ?? "",
+    logoUrl: row.logo_url ?? "",
   };
 }
