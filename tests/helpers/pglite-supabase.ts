@@ -3,9 +3,11 @@
  *
  * lib/ 코드가 쓰는 범위만 지원한다:
  *   select(cols, { count, head }) / insert / update / delete
- *   eq / neq / in / ilike / or("a.ilike.x,b.ilike.y") / order / range / maybeSingle / 쓰기 뒤 select
+ *   eq / neq / in / ilike / not(col, "is", null) / or("a.ilike.x,b.ilike.y") / order / range / maybeSingle /
+ *   쓰기 뒤 select(+ single)
  *   select 안의 관계 조인 "table(cols)" / "table!inner(cols)"(외래 키로 연결된 표, 한 단계만)와
  *   is("table", null)(조인 대상이 없는 행만 — PostgREST anti join)
+ * storage는 없다 — 필요한 테스트가 storage 속성에 가짜를 붙여 쓴다(tests/helpers/fake-storage.ts).
  *
  * 실제 Supabase와 맞춘 점
  * - 모든 쿼리를 authenticated 역할로 실행한다(RLS·권한이 실제처럼 적용됨)
@@ -151,7 +153,8 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
   private antiJoins: string[] = [];
   private countRequested = false;
   private head = false;
-  private single = false;
+  private singleRow = false;
+  private singleWrite = false;
   private payload: Row[] = [];
   private where: { sql: string; params: unknown[] }[] = [];
   private orders: string[] = [];
@@ -225,6 +228,12 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
     return this;
   }
 
+  not(column: string, operator: "is", value: null) {
+    if (operator !== "is" || value !== null) throw new Error("[pglite-supabase] not()은 is null만 지원");
+    this.where.push({ sql: `${ident(column)} is not null`, params: [] });
+    return this;
+  }
+
   is(column: string, value: null) {
     if (value !== null) throw new Error("[pglite-supabase] is()는 null만 지원");
     if (this.embeds.some((embed) => embed.table === column)) {
@@ -266,7 +275,14 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
   }
 
   maybeSingle() {
-    this.single = true;
+    this.singleRow = true;
+    return this;
+  }
+
+  /** 쓰기 뒤 .select().single(): 한 행을 배열이 아니라 그 행으로 돌려준다 */
+  single() {
+    this.singleRow = true;
+    this.singleWrite = true;
     return this;
   }
 
@@ -296,7 +312,7 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
            returning ${this.returning ? columnsSql(this.returning) : "*"}`,
           [JSON.stringify(this.payload)]
         );
-        return { data: this.returning ? rows : null, error: null, count: null };
+        return this.writeResult(rows);
       }
 
       if (this.mode === "update") {
@@ -308,7 +324,7 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
            returning ${this.returning ? columnsSql(this.returning) : "*"}`,
           [JSON.stringify(this.payload[0]), ...where.params]
         );
-        return { data: this.returning ? rows : null, error: null, count: null };
+        return this.writeResult(rows);
       }
 
       const where = this.buildWhere(0);
@@ -316,11 +332,20 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
         `delete from ${table}${where.sql} returning ${this.returning ? columnsSql(this.returning) : "*"}`,
         where.params
       );
-      return { data: this.returning ? rows : null, error: null, count: null };
+      return this.writeResult(rows);
     } catch (err) {
       const e = err as { message?: string; code?: string };
       return { data: null, error: { message: e.message ?? String(err), code: e.code ?? "" }, count: null };
     }
+  }
+
+  private writeResult(rows: Row[]): PgResponse {
+    if (!this.returning) return { data: null, error: null, count: null };
+    if (this.singleWrite) {
+      if (rows.length !== 1) return { data: null, count: null, error: { code: "PGRST116", message: "not one row" } };
+      return { data: rows[0], error: null, count: null };
+    }
+    return { data: rows, error: null, count: null };
   }
 
   /** 조인 표와 기준 표를 잇는 외래 키(한 칼럼) */
@@ -389,7 +414,7 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
       `select ${[this.columns === "*" ? `${table}.*` : columnsSql(this.columns), ...projections].join(", ")} from ${table}${where.sql}${order} limit ${limit} offset ${from}`,
       where.params
     );
-    if (this.single) {
+    if (this.singleRow) {
       if (rows.length > 1) {
         return { data: null, count: null, error: { code: "PGRST116", message: "multiple rows" } };
       }

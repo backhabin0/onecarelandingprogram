@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "상담 관리", href: "/admin/consultations" },
   { label: "통계", href: "/admin/analytics" },
   { label: "템플릿 관리", href: "/admin/templates" },
+  { label: "사진 보관함", href: "/admin/media" },
   { label: "설정", href: "/admin/settings" },
 ];
 

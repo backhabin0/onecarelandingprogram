@@ -7,7 +7,13 @@ import {
   updateSiteVerificationSettings,
 } from "@/lib/site-verification";
 import { updateSimilarityThresholds } from "@/lib/bulk-publish-settings";
-import { sanitizeSiteProfileInput, updateSiteProfile, type SiteProfileInput } from "@/lib/site-profile";
+import {
+  sanitizeSiteProfileInput,
+  updateSiteProfile,
+  updateSiteProfileLogo,
+  type SiteProfileInput,
+} from "@/lib/site-profile";
+import { LOCAL_SEO_MAX_LENGTH, isSafeExternalUrl } from "@/lib/landing-page-validation";
 import { after } from "next/server";
 import { runAutoPublishNow, updateAutoPublishSettings } from "@/lib/auto-publish";
 import { submitPendingToIndexNow } from "@/lib/indexnow";
@@ -73,6 +79,27 @@ export async function updateSiteProfileAction(input: SiteProfileInput): Promise<
   if (!sanitized.ok) return { success: false, error: sanitized.error };
 
   const result = await updateSiteProfile(sanitized.value);
+  if (result.success) {
+    revalidatePath("/");
+    revalidatePath("/admin/settings");
+  }
+  return result;
+}
+
+/**
+ * 019: 대표 업체 로고 저장(사진 보관함에서 고른 주소, 빈 값이면 지움). 페이지 로고가 비어 있고
+ * 업체명이 대표 업체와 같은 랜딩페이지도 이 로고를 쓴다(공개 페이지는 매 요청 조회라 바로 반영).
+ */
+export async function updateSiteProfileLogoAction(logoUrl: unknown): Promise<{ success: boolean; error?: string }> {
+  await requireUser();
+
+  if (typeof logoUrl !== "string") return { success: false, error: "잘못된 요청입니다." };
+  const url = logoUrl.trim();
+  if (url.length > LOCAL_SEO_MAX_LENGTH.mainImageUrl || (url && !isSafeExternalUrl(url))) {
+    return { success: false, error: "로고 주소는 http:// 또는 https://로 시작하는 500자 이내 주소여야 합니다." };
+  }
+
+  const result = await updateSiteProfileLogo(url || null);
   if (result.success) {
     revalidatePath("/");
     revalidatePath("/admin/settings");

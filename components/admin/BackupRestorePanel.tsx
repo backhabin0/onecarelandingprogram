@@ -38,6 +38,9 @@ interface DryRunPlan {
     unlinkedCount: number;
   };
   siteVerification: { willUpdate: boolean };
+  /** version 4 백업부터. 예전 서버 응답에는 없을 수 있다 */
+  siteProfile?: { willUpdate: boolean };
+  mediaAssets?: { toInsertCount: number; skipExistingCount: number };
 }
 
 interface BackupMeta {
@@ -71,6 +74,8 @@ interface RestoreResult {
   consultations: { inserted: number; skipped: number; submissionConflicts: number; orphan: number };
   events: { inserted: number; skipped: number; orphan: number };
   publishQueue: { inserted: number; updated: number; conflicts: number; unlinked: number };
+  mediaAssets?: { inserted: number; skipped: number };
+  siteProfile?: { updated: boolean };
   siteVerification: { updated: boolean };
 }
 
@@ -93,6 +98,7 @@ const INVALID_COUNT_LABEL: Record<string, string> = {
   consultations: "상담",
   events: "통계 이벤트",
   publishQueue: "공개 대기열",
+  mediaAssets: "사진 보관함 목록",
 };
 
 const PHASE_LABEL: Record<string, string> = {
@@ -102,6 +108,8 @@ const PHASE_LABEL: Record<string, string> = {
   consultations: "상담",
   events: "통계 이벤트",
   publish_queue: "공개 대기열",
+  media_assets: "사진 보관함 목록",
+  site_profile: "대표 업체 정보",
   site_verification: "검색엔진 인증 설정",
 };
 
@@ -356,6 +364,20 @@ export default function BackupRestorePanel() {
                   {plan.publishQueue.unlinkedCount}
                 </dd>
               </div>
+              {plan.mediaAssets ? (
+                <div>
+                  <dt className="font-medium text-slate-700">사진 보관함 목록</dt>
+                  <dd className="text-slate-600">
+                    추가 {plan.mediaAssets.toInsertCount} · 이미 존재(유지) {plan.mediaAssets.skipExistingCount}
+                  </dd>
+                </div>
+              ) : null}
+              {plan.siteProfile ? (
+                <div>
+                  <dt className="font-medium text-slate-700">대표 업체 정보(로고 포함)</dt>
+                  <dd className="text-slate-600">{plan.siteProfile.willUpdate ? "업데이트 예정" : "변경 없음"}</dd>
+                </div>
+              ) : null}
               <div>
                 <dt className="font-medium text-slate-700">검색엔진 인증 설정</dt>
                 <dd className="text-slate-600">
@@ -494,6 +516,20 @@ export default function BackupRestorePanel() {
                     {restoreResult.publishQueue.unlinked}
                   </dd>
                 </div>
+                {restoreResult.mediaAssets ? (
+                  <div>
+                    <dt className="font-medium">사진 보관함 목록</dt>
+                    <dd>
+                      추가 {restoreResult.mediaAssets.inserted} · 건너뜀 {restoreResult.mediaAssets.skipped}
+                    </dd>
+                  </div>
+                ) : null}
+                {restoreResult.siteProfile ? (
+                  <div>
+                    <dt className="font-medium">대표 업체 정보(로고 포함)</dt>
+                    <dd>{restoreResult.siteProfile.updated ? "업데이트됨" : "변경 없음"}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt className="font-medium">검색엔진 인증 설정</dt>
                   <dd>{restoreResult.siteVerification.updated ? "업데이트됨" : "변경 없음"}</dd>

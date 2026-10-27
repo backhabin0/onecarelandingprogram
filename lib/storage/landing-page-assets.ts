@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { countImageReferences } from "@/lib/storage/asset-references";
 
 /**
  * landing_pages 로고/메인 이미지 전용 Storage 헬퍼.
@@ -133,6 +134,8 @@ const OBJECT_PATH_PREFIX = "landing-pages/";
  * 실제로 업로드하는 "landing-pages/" 경로 형태(buildObjectPath 참고)가
  * 아니면 null — 외부에서 받은 임의의 URL을 Storage 삭제 경로로 오인해
  * 변환하지 않기 위한 안전장치다(삭제는 항상 이 함수를 거쳐야 한다).
+ * 사진 보관함(library/) 파일도 null이다 — 페이지에서 사진을 바꾸거나 페이지를 지워도
+ * 보관함 사진은 남고, 보관함 화면에서만(쓰는 곳이 없을 때) 지운다(lib/media-assets.ts).
  */
 export function getStoragePathFromPublicUrl(publicUrl: string): string | null {
   const marker = `/storage/v1/object/public/${LANDING_PAGE_ASSETS_BUCKET}/`;
@@ -217,33 +220,15 @@ export async function removeLandingPageImageByUrl(
   const path = getStoragePathFromPublicUrl(url);
   if (!path) return;
 
-  const [logoRef, mainRef, ogRef] = await Promise.all([
-    supabase
-      .from("landing_pages")
-      .select("id", { count: "exact", head: true })
-      .eq("logo_url", url),
-    supabase
-      .from("landing_pages")
-      .select("id", { count: "exact", head: true })
-      .eq("main_image_url", url),
-    supabase
-      .from("landing_page_seo_settings")
-      .select("landing_page_id", { count: "exact", head: true })
-      .eq("og_image_url", url),
-  ]);
+  // 019: 사진2·3, 공개 전 대기열 사진, 대표 업체 로고까지 모두 본다(lib/storage/asset-references.ts).
+  const references = await countImageReferences(supabase, [url]);
 
-  if (logoRef.error || mainRef.error || ogRef.error) {
-    console.error(
-      "[storage] reference check failed, skip remove:",
-      logoRef.error ?? mainRef.error ?? ogRef.error
-    );
+  if (references.error) {
+    console.error("[storage] reference check failed, skip remove");
     return;
   }
 
-  const stillReferenced =
-    (logoRef.count ?? 0) > 0 || (mainRef.count ?? 0) > 0 || (ogRef.count ?? 0) > 0;
-
-  if (stillReferenced) {
+  if (references.total > 0) {
     console.log("[storage] skip remove: asset still referenced by another page");
     return;
   }

@@ -70,8 +70,15 @@ export default async function EditLandingPagePage({
             template: landingPage.template,
             status: landingPage.status,
           }}
-          initialLogoUrl={landingPage.logo_url}
-          initialMainImageUrl={landingPage.main_image_url}
+          initialPhotos={{
+            logoUrl: landingPage.logo_url ?? "",
+            mainImageUrl: landingPage.main_image_url ?? "",
+            mainImageAlt: landingPage.main_image_alt ?? "",
+            image2Url: landingPage.image_2_url ?? "",
+            image2Alt: landingPage.image_2_alt ?? "",
+            image3Url: landingPage.image_3_url ?? "",
+            image3Alt: landingPage.image_3_alt ?? "",
+          }}
         />
         <SeoSettingsPanel
           landingPage={landingPage}

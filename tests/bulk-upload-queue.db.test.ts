@@ -323,7 +323,7 @@ describe("비교 대상 불러오기(loadBulkCheckContext)", () => {
       keywords: ["헬스장"],
       excludeQueueId: self.id as string,
     });
-    expect(context).toEqual({ existingSlugs: [], existingPairs: [], corpus: [] });
+    expect(context).toEqual({ existingSlugs: [], existingPairs: [], corpus: [], mediaLibrary: [] });
 
     await insertPage("percent", "100% 환불 헬스장", "a", "b");
     await insertPage("no-percent", "100 환불 헬스장", "a", "b");

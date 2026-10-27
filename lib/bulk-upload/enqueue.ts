@@ -5,6 +5,7 @@ import { getSimilarityThresholds } from "@/lib/bulk-publish-settings";
 import {
   buildUploadSlug,
   checkBulkUploadRows,
+  collectPhotoValues,
   decideQueueState,
   issuesForStorage,
   type CheckedUploadRow,
@@ -60,6 +61,7 @@ export async function enqueueUploadRows(input: {
   const { context, error: contextError } = await loadBulkCheckContext({
     slugs: rows.map((row) => buildUploadSlug(row.values)),
     keywords: rows.map((row) => row.values.keyword ?? ""),
+    photoValues: collectPhotoValues(rows),
   });
   if (contextError) return { results: [], error: contextError };
 

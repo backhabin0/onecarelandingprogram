@@ -23,10 +23,15 @@ import {
   type BackupLandingPage,
   type BackupQueueRow,
   LANDING_PAGE_LOCAL_SEO_KEYS,
+  PHOTO_KEYS,
+  QUEUE_PHOTO_KEYS,
   QUEUE_LOCAL_SEO_KEYS,
+  type BackupMediaAsset,
+  type BackupSiteProfile,
   type BackupSiteVerificationSettings,
   type BackupStorageManifestEntry,
 } from "@/types/backup";
+import { isMediaKind, isMediaMime, isSha256Hex } from "@/lib/media/library";
 
 /**
  * 업로드된 백업 JSON을 안전하게 해석한다.
@@ -103,6 +108,8 @@ function sanitizeLandingPage(item: unknown, version: number): BackupLandingPage 
   }
   const localSeo = pickNullableStrings(r, LANDING_PAGE_LOCAL_SEO_KEYS, version >= 3);
   if (!localSeo) return null;
+  const photos = pickNullableStrings(r, PHOTO_KEYS, version >= 4);
+  if (!photos) return null;
 
   const status: LandingPageStatus = r.status;
 
@@ -126,7 +133,7 @@ function sanitizeLandingPage(item: unknown, version: number): BackupLandingPage 
   if (version >= 2) {
     page.published_at = r.published_at as string | null;
   }
-  return { ...page, ...localSeo };
+  return { ...page, ...localSeo, ...photos };
 }
 
 function sanitizeSeoSettings(item: unknown): LandingPageSeoSettings | null {
@@ -255,6 +262,57 @@ function sanitizeEvent(item: unknown): BackupEventRow | null {
   };
 }
 
+/** 대표 업체 정보(version 4부터). 다섯 칸이 모두 문자열 또는 null이어야 한다 */
+function sanitizeSiteProfile(value: unknown): BackupSiteProfile | null {
+  if (!isPlainRecord(value)) return null;
+  const keys = ["business_name", "description", "phone", "kakao_url", "logo_url"] as const;
+  const picked = pickNullableStrings(value, keys, true);
+  if (!picked) return null;
+  return {
+    business_name: picked.business_name ?? null,
+    description: picked.description ?? null,
+    phone: picked.phone ?? null,
+    kakao_url: picked.kakao_url ?? null,
+    logo_url: picked.logo_url ?? null,
+  };
+}
+
+const isPositiveInt = (value: unknown, max: number): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= max;
+
+/** 사진 보관함 목록 한 행(version 4부터). DB 제약과 같은 범위만 받는다 */
+function sanitizeMediaAsset(item: unknown): BackupMediaAsset | null {
+  if (!isPlainRecord(item)) return null;
+  const r = item;
+  if (!isUuid(r.id) || !isSha256Hex(r.sha256) || !isMediaKind(r.kind) || !isMediaMime(r.mime)) return null;
+  if (!isString(r.name) || r.name.length < 1 || r.name.length > 200) return null;
+  // 설명은 없으면 빈 값(설명 칸이 생기기 전 개발 중 파일)
+  const description = r.description === undefined ? "" : r.description;
+  if (!isString(description) || description.length > 200) return null;
+  if (!isString(r.storage_path) || !isString(r.og_storage_path) || !isString(r.url) || !isString(r.og_url)) return null;
+  if (!r.storage_path.startsWith(`library/${r.sha256}.`) || r.og_storage_path !== `library/${r.sha256}-og.jpg`) return null;
+  if (!isPositiveInt(r.width, 4096) || !isPositiveInt(r.height, 4096)) return null;
+  if (!isPositiveInt(r.bytes, 2097152) || !isPositiveInt(r.og_bytes, 2097152)) return null;
+  if (!isIsoDateString(r.created_at)) return null;
+  return {
+    id: r.id,
+    sha256: r.sha256,
+    kind: r.kind,
+    name: r.name,
+    description,
+    storage_path: r.storage_path,
+    url: r.url,
+    og_storage_path: r.og_storage_path,
+    og_url: r.og_url,
+    mime: r.mime,
+    width: r.width,
+    height: r.height,
+    bytes: r.bytes,
+    og_bytes: r.og_bytes,
+    created_at: r.created_at,
+  };
+}
+
 function sanitizeSiteVerification(
   value: unknown
 ): BackupSiteVerificationSettings | null {
@@ -269,7 +327,7 @@ function sanitizeSiteVerification(
   };
 }
 
-const MANIFEST_KINDS = ["logo", "main", "og"] as const;
+const MANIFEST_KINDS = ["logo", "main", "og", "image2", "image3"] as const;
 
 function sanitizeStorageManifestEntry(
   item: unknown
@@ -331,6 +389,8 @@ function sanitizeQueueRow(item: unknown, version: number): BackupQueueRow | null
   const r = item;
   const localSeo = pickNullableStrings(r, QUEUE_LOCAL_SEO_KEYS, version >= 3);
   if (!localSeo) return null;
+  const photos = pickNullableStrings(r, QUEUE_PHOTO_KEYS, version >= 4);
+  if (!photos) return null;
 
   if (!isUuid(r.id)) return null;
   if (
@@ -424,6 +484,7 @@ function sanitizeQueueRow(item: unknown, version: number): BackupQueueRow | null
     batch_id: r.batch_id,
     created_at: r.created_at,
     ...localSeo,
+    ...photos,
   };
 }
 
@@ -513,6 +574,10 @@ export function parseAndValidateBackupFile(rawText: string): ParseBackupResult {
   if (consultations.invalid > 0) invalidCounts.consultations = consultations.invalid;
   if (events.invalid > 0) invalidCounts.events = events.invalid;
   if (publishQueue.invalid > 0) invalidCounts.publishQueue = publishQueue.invalid;
+  // 대표 업체 정보·사진 보관함 목록은 version 4부터 들어 있다.
+  const mediaAssets =
+    version >= 4 ? sanitizeArray(data.mediaAssets, sanitizeMediaAsset) : { rows: [], invalid: 0 };
+  if (mediaAssets.invalid > 0) invalidCounts.mediaAssets = mediaAssets.invalid;
 
   const backup: BackupFile = {
     format: BACKUP_FORMAT,
@@ -538,6 +603,8 @@ export function parseAndValidateBackupFile(rawText: string): ParseBackupResult {
       ),
       storageManifest: storageManifest.rows,
       publishQueue: publishQueue.rows,
+      siteProfile: version >= 4 ? sanitizeSiteProfile(data.siteProfile) : null,
+      mediaAssets: mediaAssets.rows,
     },
   };
 

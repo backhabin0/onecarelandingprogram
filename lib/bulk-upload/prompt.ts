@@ -1,6 +1,6 @@
 import { FAQ_MAX_LENGTH, LANDING_PAGE_MAX_LENGTH, SEO_MAX_LENGTH, SLUG_PATTERN } from "@/lib/landing-page-validation";
 import { BLOCKED_SLUG_PREFIX_MESSAGE, hasBlockedSlugPrefix } from "@/lib/slug";
-import { BULK_UPLOAD_COLUMNS, CUSTOMER_ONLY_FIELDS, type BulkUploadField } from "./columns";
+import { BULK_UPLOAD_COLUMNS, CUSTOMER_ONLY_FIELDS, PHOTO_UPLOAD_FIELDS, type BulkUploadField } from "./columns";
 import { MAX_UPLOAD_ROWS } from "./parse";
 
 /**
@@ -159,12 +159,33 @@ function inputRow(combination: Combination, business: PromptBusinessInfo): strin
   return BULK_UPLOAD_COLUMNS.map((column) => cell(fixed[column.field] ?? "")).join("\t");
 }
 
+/** 사진 보관함의 사진 한 장(프롬프트에는 이름과 설명만 넣는다) */
+export interface PromptPhoto {
+  name: string;
+  description: string;
+}
+
+/** 보관함 사진이 있으면 AI가 파일 이름을 골라 넣는 칸(설명 칸은 비워 두면 보관함 설명이 들어감) */
+const AI_PHOTO_FIELDS: readonly BulkUploadField[] = PHOTO_UPLOAD_FIELDS.map((slot) => slot.url);
+const PHOTO_ALT_FIELDS: readonly BulkUploadField[] = PHOTO_UPLOAD_FIELDS.map((slot) => slot.alt);
+
+/** 한 사진을 이 요청 안에서 쓸 수 있는 최대 횟수: 칸 수(행 × 3)를 사진 수로 고르게 나눈 값 */
+export function maxUsesPerPhoto(rowCount: number, photoCount: number): number {
+  if (photoCount <= 0) return 0;
+  return Math.max(1, Math.ceil((rowCount * AI_PHOTO_FIELDS.length) / photoCount));
+}
+
 /** 프롬프트 1개(조합 일부)의 본문 */
 function buildPromptText(
   combinations: readonly Combination[],
   business: PromptBusinessInfo,
-  part: { index: number; total: number; from: number; to: number; all: number }
+  part: { index: number; total: number; from: number; to: number; all: number },
+  photos: readonly PromptPhoto[]
 ): string {
+  const hasPhotos = photos.length > 0;
+  const customerOnly = hasPhotos
+    ? CUSTOMER_ONLY_FIELDS.filter((field) => !AI_PHOTO_FIELDS.includes(field) && !PHOTO_ALT_FIELDS.includes(field))
+    : CUSTOMER_ONLY_FIELDS;
   const lines: string[] = [];
   lines.push("당신은 지역 업체 랜딩페이지 문구를 쓰는 카피라이터입니다.");
   lines.push("아래 [입력 표]의 빈 칸을 채워서, [출력 형식]에 맞는 표 하나만 출력하세요.");
@@ -189,12 +210,25 @@ function buildPromptText(
   lines.push("- 입력 표의 값을 한 글자도 바꾸지 말고 그대로 쓰세요. 빈 칸은 빈 칸으로 둡니다.");
 
   lines.push("", "[비워 둘 칸 — 채우지 마세요]");
-  lines.push(`- ${CUSTOMER_ONLY_FIELDS.map(header).join(", ")}`);
+  lines.push(`- ${customerOnly.map(header).join(", ")}`);
   lines.push("- 손님이 나중에 직접 채우는 칸입니다. 내용을 지어내지 말고 빈 칸 그대로 출력하세요.");
+  if (hasPhotos) {
+    lines.push(
+      `- ${PHOTO_ALT_FIELDS.map(header).join(", ")}도 비워 두세요. 고른 사진의 보관함 설명이 자동으로 들어갑니다.`
+    );
+  }
 
   lines.push("", "[직접 쓸 칸과 글자 수 제한(공백 포함, 이 숫자를 넘지 마세요)]");
   for (const { field, max } of AI_WRITTEN_FIELDS) {
     lines.push(`- ${header(field)}: ${max}자 이내`);
+  }
+
+  if (hasPhotos) {
+    lines.push("", `[사진 보관함 — 사진 칸에 쓸 수 있는 사진 ${photos.length}장(파일 이름: 설명)]`);
+    for (const photo of photos) {
+      const description = cell(photo.description);
+      lines.push(`- ${cell(photo.name)}${description ? `: ${description}` : ""}`);
+    }
   }
 
   lines.push("", "[작성 규칙]");
@@ -218,6 +252,16 @@ function buildPromptText(
     "   업체 소개형 질문(\"OO은 어떤 곳인가요?\")이나 \"자료가 필요해요\" 같은 평서문은 쓰지 말고, 한 행 안에서 같은 뜻의 질문을 반복하지 마세요."
   );
   lines.push("8. 위의 글자 수 제한을 반드시 지키세요.");
+  if (hasPhotos) {
+    const photoFields = AI_PHOTO_FIELDS.map(header).join("·");
+    lines.push(
+      `9. 행마다 페이지 내용(지역·키워드·문구)에 맞는 사진을 [사진 보관함]에서 골라 ${photoFields} 칸에 파일 이름을 목록에 적힌 그대로(한 글자도 바꾸지 말고) 쓰세요.`
+    );
+    lines.push("   목록에 없는 파일 이름이나 인터넷 주소는 쓰지 마세요. 맞는 사진이 없으면 그 칸은 비워 둡니다.");
+    lines.push(
+      `   한 행 안에서 같은 사진을 두 번 쓰지 말고, 같은 사진이 여러 행에 몰리지 않게 고르게 나눠 쓰세요(이 요청에서 한 사진은 ${maxUsesPerPhoto(combinations.length, photos.length)}번까지).`
+    );
+  }
 
   lines.push("", `[입력 표] (${combinations.length}행)`);
   lines.push(BULK_UPLOAD_COLUMNS.map((c) => c.header).join("\t"));
@@ -234,15 +278,18 @@ export interface BuildPromptsResult {
 
 /**
  * 지역 × 키워드 조합으로 프롬프트를 만든다. 조합이 chunkSize(기본 50)를 넘으면
- * chunkSize개씩 나눠 여러 개를 만든다.
+ * chunkSize개씩 나눠 여러 개를 만든다. photos(사진 보관함의 사진)가 있으면 사진 목록과
+ * "내용에 맞는 사진을 골라 사진 칸에 파일 이름으로" 규칙을 넣는다.
  */
 export function buildBulkPrompts(input: {
   regions: readonly SlugItem[];
   keywords: readonly SlugItem[];
   business: PromptBusinessInfo;
   chunkSize?: number;
+  photos?: readonly PromptPhoto[];
 }): BuildPromptsResult {
   const chunkSize = input.chunkSize ?? PROMPT_CHUNK_SIZE;
+  const photos = input.photos ?? [];
   const combinations = buildCombinations(input.regions, input.keywords);
   const errors: string[] = [];
 
@@ -271,7 +318,7 @@ export function buildBulkPrompts(input: {
     const from = i * chunkSize + 1;
     const to = from + part.length - 1;
     return {
-      text: buildPromptText(part, input.business, { index: i + 1, total, from, to, all: combinations.length }),
+      text: buildPromptText(part, input.business, { index: i + 1, total, from, to, all: combinations.length }, photos),
       from,
       to,
       count: part.length,

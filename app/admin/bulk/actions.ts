@@ -9,6 +9,7 @@ import { enqueueUploadRows, type EnqueueRowResult } from "@/lib/bulk-upload/enqu
 import { MAX_UPLOAD_ROWS } from "@/lib/bulk-upload/parse";
 import { isUuid, sanitizeStringList, sanitizeUploadPayload } from "@/lib/bulk-upload/payload";
 import type { SimilarityThresholds } from "@/lib/bulk-upload/similarity";
+import type { MediaLibraryEntry } from "@/lib/media/library";
 
 export interface BulkCheckContextActionResult {
   success: boolean;
@@ -16,6 +17,8 @@ export interface BulkCheckContextActionResult {
   existingSlugs?: string[];
   existingPairs?: { region: string; keyword: string }[];
   corpus?: CorpusEntry[];
+  /** 019: 사진 칸에 쓴 이름과 맞는 보관함 사진 */
+  mediaLibrary?: MediaLibraryEntry[];
   thresholds?: SimilarityThresholds;
   /** 기준값을 못 불러와 기본값으로 검사하는 경우 안내 문구 */
   thresholdsNotice?: string | null;
@@ -28,18 +31,21 @@ export interface BulkCheckContextActionResult {
 export async function getBulkCheckContextAction(input: {
   slugs: unknown;
   keywords: unknown;
+  photoValues?: unknown;
 }): Promise<BulkCheckContextActionResult> {
   await requireUser();
 
   const slugs = sanitizeStringList(input.slugs, MAX_UPLOAD_ROWS);
   const keywords = sanitizeStringList(input.keywords, MAX_UPLOAD_ROWS);
-  if (!slugs || !keywords) {
+  // 사진 칸은 행마다 4칸까지(사진1~3·로고)
+  const photoValues = sanitizeStringList(input.photoValues ?? [], MAX_UPLOAD_ROWS * 4, 500);
+  if (!slugs || !keywords || !photoValues) {
     return { success: false, error: "잘못된 요청입니다." };
   }
 
   const [{ thresholds, error: thresholdsNotice }, { context, error }] = await Promise.all([
     getSimilarityThresholds(),
-    loadBulkCheckContext({ slugs, keywords }),
+    loadBulkCheckContext({ slugs, keywords, photoValues }),
   ]);
   if (error) return { success: false, error };
 

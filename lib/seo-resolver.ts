@@ -2,6 +2,7 @@ import type { LandingPage } from "@/types/landing-page";
 import type { LandingPageSeoSettings } from "@/types/seo";
 import { buildSeoTitle, buildSeoDescription } from "@/lib/seo-auto";
 import { getAbsoluteUrl } from "@/lib/site";
+import { resolveAutoOgImage, type SitePhotoInfo } from "@/lib/landing-photos";
 
 /**
  * public 랜딩페이지 1건에 대해 실제로 적용될 SEO/AEO/GEO 값을 계산한 결과.
@@ -15,6 +16,8 @@ export interface ResolvedLandingPageSeo {
   ogTitle: string;
   ogDescription: string;
   ogImage?: string;
+  /** 019: og:image가 보관함에서 만든 1200×630 JPEG면 그 크기 */
+  ogImageSize?: { width: number; height: number };
   robots: { index: boolean; follow: boolean };
   businessCategory?: string;
   serviceArea?: string;
@@ -30,7 +33,9 @@ function manualOrUndefined(value: string | null | undefined): string | undefined
 
 export function resolveLandingPageSeo(
   landingPage: LandingPage,
-  seoSettings: LandingPageSeoSettings | null
+  seoSettings: LandingPageSeoSettings | null,
+  /** 019: 대표 업체(로고 대체용). 없으면 페이지 로고만 본다 */
+  site: SitePhotoInfo | null = null
 ): ResolvedLandingPageSeo {
   const autoTitle = buildSeoTitle(landingPage);
   const autoDescription = buildSeoDescription(landingPage);
@@ -45,8 +50,11 @@ export function resolveLandingPageSeo(
   const description = manualDescription ?? autoDescription;
   const ogTitle = manualOgTitle ?? manualTitle ?? autoTitle;
   const ogDescription = manualOgDescription ?? manualDescription ?? autoDescription;
-  const ogImage =
-    manualOgImage ?? landingPage.main_image_url ?? landingPage.logo_url ?? undefined;
+  // 전용 OG 이미지 → 사진1의 공유용 사진(1200×630) → 사진1 → 로고(대표 업체 로고 포함)
+  const autoOgImage = manualOgImage ? null : resolveAutoOgImage(landingPage, site);
+  const ogImage = manualOgImage ?? autoOgImage?.url ?? undefined;
+  const ogImageSize =
+    autoOgImage?.width && autoOgImage.height ? { width: autoOgImage.width, height: autoOgImage.height } : undefined;
 
   const noindex = seoSettings?.seo_noindex ?? false;
 
@@ -57,6 +65,7 @@ export function resolveLandingPageSeo(
     ogTitle,
     ogDescription,
     ogImage,
+    ...(ogImageSize ? { ogImageSize } : {}),
     robots: { index: !noindex, follow: true },
     businessCategory: manualOrUndefined(seoSettings?.business_category),
     serviceArea: manualOrUndefined(seoSettings?.service_area),

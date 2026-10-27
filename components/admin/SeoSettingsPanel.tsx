@@ -11,6 +11,7 @@ import {
   validateImageFile,
 } from "@/lib/storage/landing-page-assets";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { compressOgImage } from "@/lib/media/compress";
 import { SEO_MAX_LENGTH } from "@/lib/landing-page-validation";
 import Card from "@/components/admin/Card";
 import FormField from "@/components/admin/FormField";
@@ -144,18 +145,30 @@ export default function SeoSettingsPanel({
   };
 
   const handleOgImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
+    const original = event.target.files?.[0] ?? null;
     setImageError(null);
-    if (!file) return;
+    if (!original) return;
 
-    const validation = await validateImageFile(file, "og");
-    if (!validation.valid) {
-      setImageError(validation.error ?? "이미지를 업로드하지 못했습니다.");
+    // 019: 올리기 전에 1200×630 JPEG로 줄인다(버킷 상한 2MB, HEIC는 안내 후 거절).
+    setIsImageBusy(true);
+    let file: File;
+    try {
+      file = await compressOgImage(original);
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : "이미지를 업로드하지 못했습니다.");
+      setIsImageBusy(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
-    setIsImageBusy(true);
+    const validation = await validateImageFile(file, "og");
+    if (!validation.valid) {
+      setImageError(validation.error ?? "이미지를 업로드하지 못했습니다.");
+      setIsImageBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     const supabase = getSupabaseBrowserClient();
     const uploadResult = await uploadLandingPageImage(supabase, landingPageId, "og", file);
 
@@ -336,7 +349,7 @@ export default function SeoSettingsPanel({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/jpeg,image/png,image/webp,.heic,.heif"
                 className={fileInputClassName}
                 disabled={isImageBusy}
                 onChange={handleOgImageChange}
@@ -348,8 +361,8 @@ export default function SeoSettingsPanel({
                 <p className="text-xs text-red-600">{imageError}</p>
               ) : null}
               <p className="text-xs text-slate-400">
-                JPG, PNG, WEBP · 최대 5MB. 비워두면 메인 이미지 → 로고 순으로
-                자동 사용됩니다.
+                JPG, PNG, WEBP · 1200×630 JPEG로 줄여 저장합니다. 비워두면 사진1의
+                공유용 사진(1200×630) → 사진1 → 로고 순으로 자동 사용됩니다.
               </p>
               {ogImageUrl && !isImageBusy ? (
                 <button

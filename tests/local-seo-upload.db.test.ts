@@ -36,7 +36,8 @@ const check = (values: UploadValues) => checkBulkUploadRows([{ rowNumber: 2, val
 
 describe("양식 새 칸 파싱과 구 양식 호환", () => {
   it("새 양식: 시/군·city_slug·대표 사진 URL·사진 설명(alt)·현장 사례를 읽는다(맨 뒤 5칸)", () => {
-    expect(HEADERS.slice(20)).toEqual(["시/군", "city_slug", "대표 사진 URL", "사진 설명(alt)", "현장 사례"]);
+    // 7단계 5칸 뒤에 019 사진2·3 칸 4개가 더 붙는다(tests/photos.db.test.tsx)
+    expect(HEADERS.slice(20, 25)).toEqual(["시/군", "city_slug", "대표 사진 URL", "사진 설명(alt)", "현장 사례"]);
     const row = ["산본동", "헬스장", "sanbon", "gym", "원케어", "제목", ...Array(14).fill(""), "군포시", "gunpo", "https://img.example/a.jpg", "내부 사진", "지난주 현장"];
     const parsed = sheetToUploadRows([HEADERS, row]);
     expect(parsed.fileErrors).toEqual([]);
@@ -119,7 +120,7 @@ describe("업로드 검사(7단계)", () => {
     const header = lines[lines.findIndex((l) => l.startsWith("[입력 표]")) + 1].split("\t");
     const row = lines[lines.findIndex((l) => l.startsWith("[입력 표]")) + 2].split("\t");
     expect(header).toEqual(HEADERS);
-    expect(row.slice(20)).toEqual(["", "", "", "", ""]);
+    expect(row.slice(20, 25)).toEqual(["", "", "", "", ""]);
   });
 });
 

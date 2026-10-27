@@ -4,7 +4,8 @@ import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Card from "@/components/admin/Card";
 import FormField from "@/components/admin/FormField";
-import { updateSiteProfileAction } from "@/app/admin/settings/actions";
+import PhotoSlotField from "@/components/admin/PhotoSlotField";
+import { updateSiteProfileAction, updateSiteProfileLogoAction } from "@/app/admin/settings/actions";
 import type { SiteProfile } from "@/lib/site-profile";
 
 interface SiteProfileSettingsPanelProps {
@@ -23,6 +24,9 @@ export default function SiteProfileSettingsPanel({ initialProfile, maxLength }: 
   const [description, setDescription] = useState(initialProfile.description ?? "");
   const [phone, setPhone] = useState(initialProfile.phone ?? "");
   const [kakaoUrl, setKakaoUrl] = useState(initialProfile.kakaoUrl ?? "");
+  const [logoUrl, setLogoUrl] = useState(initialProfile.logoUrl ?? "");
+  const [isSavingLogo, startSavingLogo] = useTransition();
+  const [logoMessage, setLogoMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [isSaving, startSaving] = useTransition();
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -33,7 +37,25 @@ export default function SiteProfileSettingsPanel({ initialProfile, maxLength }: 
     setDescription(initialProfile.description ?? "");
     setPhone(initialProfile.phone ?? "");
     setKakaoUrl(initialProfile.kakaoUrl ?? "");
+    setLogoUrl(initialProfile.logoUrl ?? "");
   }
+
+  // 로고는 고르거나 비우는 즉시 저장한다(글자 칸 저장과 따로).
+  const handleLogoChange = (url: string) => {
+    const previous = logoUrl;
+    setLogoUrl(url);
+    setLogoMessage(null);
+    startSavingLogo(async () => {
+      const result = await updateSiteProfileLogoAction(url);
+      if (!result.success) {
+        setLogoUrl(previous);
+        setLogoMessage({ type: "error", text: result.error ?? "대표 업체 로고를 저장하지 못했습니다." });
+        return;
+      }
+      setLogoMessage({ type: "success", text: url ? "대표 업체 로고를 저장했습니다." : "대표 업체 로고를 지웠습니다." });
+      router.refresh();
+    });
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -113,6 +135,20 @@ export default function SiteProfileSettingsPanel({ initialProfile, maxLength }: 
             disabled={isSaving}
           />
         </FormField>
+        <div className="flex flex-col gap-1 border-t border-slate-100 pt-4">
+          <PhotoSlotField
+            id="site-logo"
+            label="대표 업체 로고"
+            kind="logo"
+            url={logoUrl}
+            onUrlChange={handleLogoChange}
+            disabled={isSavingLogo}
+            hint="고르면 바로 저장됩니다. 로고를 비워 둔 랜딩페이지 중 업체명이 위 업체명과 똑같은 페이지에만 이 로고가 보입니다."
+          />
+          {logoMessage ? (
+            <p className={`text-xs ${logoMessage.type === "error" ? "text-red-600" : "text-green-700"}`}>{logoMessage.text}</p>
+          ) : null}
+        </div>
         <div className="flex justify-end">
           <button
             type="submit"

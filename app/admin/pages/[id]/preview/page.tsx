@@ -4,6 +4,7 @@ import { getLandingPageById } from "@/lib/landing-pages";
 import { getSeoSettingsByLandingPageId } from "@/lib/seo-settings";
 import { getFaqsByLandingPageId } from "@/lib/faqs";
 import { resolveLandingPageFaqs } from "@/lib/faq-resolver";
+import { getSiteProfile } from "@/lib/site-profile";
 import LandingPageRenderer from "@/components/landing/LandingPageRenderer";
 import AdminPreviewBar from "@/components/admin/AdminPreviewBar";
 
@@ -71,9 +72,10 @@ export default async function PreviewLandingPagePage({
     notFound();
   }
 
-  const [{ data: seoSettings }, { data: faqs }] = await Promise.all([
+  const [{ data: seoSettings }, { data: faqs }, siteProfile] = await Promise.all([
     getSeoSettingsByLandingPageId(id),
     getFaqsByLandingPageId(id),
+    getSiteProfile(),
   ]);
 
   const resolvedFaqs = resolveLandingPageFaqs(
@@ -88,6 +90,7 @@ export default async function PreviewLandingPagePage({
       <LandingPageRenderer
         landingPage={landingPage}
         faqs={resolvedFaqs}
+        siteBusiness={siteProfile}
         mode="preview"
       />
     </div>

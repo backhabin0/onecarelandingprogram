@@ -413,6 +413,10 @@ describe("화면(정적 렌더링)", () => {
     city_slug: null,
     main_image_alt: null,
     case_study: null,
+    image_2_url: null,
+    image_2_alt: null,
+    image_3_url: null,
+    image_3_alt: null,
     created_at: "2026-10-01T00:00:00Z",
     updated_at: "2026-10-01T00:00:00Z",
   });

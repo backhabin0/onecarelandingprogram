@@ -1,13 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import Card from "@/components/admin/Card";
 import BulkCheckResultTable from "@/components/admin/BulkCheckResultTable";
+import CommonPhotoSettingsCard from "@/components/admin/CommonPhotoSettingsCard";
+import {
+  applyCommonPhotos,
+  loadCommonPhotoSettings,
+  saveCommonPhotoSettings,
+  type CommonPhotoSettings,
+} from "@/lib/bulk-upload/common-photos";
 import { enqueueBulkRowsAction, getBulkCheckContextAction } from "@/app/admin/bulk/actions";
 import {
   buildUploadSlug,
   checkBulkUploadRows,
+  collectPhotoValues,
   decideQueueState,
   type BulkCheckResult,
   type CheckedRowStatus,
@@ -54,6 +62,25 @@ export default function BulkUploadPanel() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [summary, setSummary] = useState<EnqueueSummary | null>(null);
   const [pasteText, setPasteText] = useState("");
+  // 공통 사진 설정(빈 사진 칸에만 넣음). 마지막 선택은 이 브라우저에 기억한다.
+  const [commonPhotos, setCommonPhotos] = useState<CommonPhotoSettings>({});
+  const [commonFilledRows, setCommonFilledRows] = useState(0);
+
+  useEffect(() => {
+    // localStorage는 브라우저에만 있어 화면을 그린 뒤 읽는다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCommonPhotos(loadCommonPhotoSettings());
+  }, []);
+
+  const handleCommonPhotosChange = (next: CommonPhotoSettings) => {
+    setCommonPhotos(next);
+    saveCommonPhotoSettings(next);
+    // 이미 읽은 파일이 있으면 바뀐 공통 사진으로 다시 검사한다(저장 전이라 대기열은 그대로).
+    if (parsed && parsed.fileErrors.length === 0 && busy === null && !summary) {
+      setBusy("checking");
+      void runCheck(parsed, next);
+    }
+  };
 
   const reset = () => {
     setParsed(null);
@@ -87,7 +114,7 @@ export default function BulkUploadPanel() {
     await runCheck(parsePastedUpload(pasteText));
   };
 
-  const runCheck = async (result: ParsedUpload) => {
+  const runCheck = async (result: ParsedUpload, photos: CommonPhotoSettings = commonPhotos) => {
     setParsed(result);
     if (result.fileErrors.length > 0) {
       setBusy(null);
@@ -95,23 +122,29 @@ export default function BulkUploadPanel() {
     }
 
     setBusy("checking");
+    setError(null);
     try {
+      // 공통 사진은 빈 칸에만 넣고, 넣은 뒤의 행으로 검사·저장한다.
+      const applied = applyCommonPhotos(result.rows, photos);
       const context = await getBulkCheckContextAction({
-        slugs: result.rows.map((row) => buildUploadSlug(row.values)),
-        keywords: result.rows.map((row) => row.values.keyword ?? ""),
+        slugs: applied.rows.map((row) => buildUploadSlug(row.values)),
+        keywords: applied.rows.map((row) => row.values.keyword ?? ""),
+        photoValues: collectPhotoValues(applied.rows),
       });
       if (!context.success || !context.thresholds) {
         setError(context.error ?? "검사에 필요한 정보를 불러오지 못했습니다.");
         return;
       }
       setNotice(context.thresholdsNotice ?? null);
-      setRows(result.rows);
+      setRows(applied.rows);
+      setCommonFilledRows(applied.filledRows);
       setCheck(
-        checkBulkUploadRows(result.rows, {
+        checkBulkUploadRows(applied.rows, {
           existingSlugs: context.existingSlugs ?? [],
           existingPairs: context.existingPairs ?? [],
           corpus: context.corpus ?? [],
           thresholds: context.thresholds,
+          mediaLibrary: context.mediaLibrary ?? [],
         })
       );
     } catch {
@@ -163,6 +196,12 @@ export default function BulkUploadPanel() {
 
   return (
     <div className="flex flex-col gap-6">
+      <CommonPhotoSettingsCard
+        settings={commonPhotos}
+        onChange={handleCommonPhotosChange}
+        disabled={busy !== null}
+      />
+
       <Card className="p-6">
         <h2 className="text-base font-semibold text-slate-900">1. 파일 올리기 또는 붙여넣기</h2>
         <p className="mt-1 text-sm text-slate-500">
@@ -250,6 +289,11 @@ export default function BulkUploadPanel() {
               {parsed.ignoredHeaders.length > 0 ? (
                 <p className="mt-1 text-xs text-slate-500">
                   양식에 없는 열은 무시했습니다: {parsed.ignoredHeaders.join(", ")}
+                </p>
+              ) : null}
+              {commonFilledRows > 0 ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  공통 사진을 빈 사진 칸이 있는 {commonFilledRows.toLocaleString()}행에 넣어 검사했습니다.
                 </p>
               ) : null}
               {notice ? <p className="mt-1 text-xs text-amber-700">{notice}</p> : null}
