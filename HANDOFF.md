@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-27 (feature/list-copy-check: 랜딩페이지 목록 URL 복사완료 체크, migration 없음·머지·배포 안 함)
+마지막 업데이트: 2026-10-27 (feature/list-copy-check 운영 배포 완료: main `38ec710`, migration 없음)
 
 ## 배경
 
@@ -843,3 +843,24 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 체크 상태를 못 읽으면 숫자 대신 안내, 체크칸 숨김(목록·URL 복사는 그대로)
 - 테스트: `tests/list-copy-check.db.test.tsx`(PGlite). PGlite 어댑터에 관계 조인(`table(cols)`·`!inner`·`is(table, null)`) 지원 추가
 - ⚠ 관계 조인 문법은 실제 PostgREST(운영)에서는 아직 확인 안 함 — 이 PC에 `.env.local`이 없어 읽기 확인도 못 함. 배포 뒤 `/admin/pages?copy=done`·`?copy=todo` 화면을 한 번 열어 확인할 것
+
+### 운영 배포 ✅ (2026-10-27, migration 없음·운영 DB 접속 없음)
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | 배포 전 운영 | `9a46d67` = **`dpl_48gHwvsYw2csMeUXP8qAtDGRWaad`** (`onecarelandingprogram-eu6o0r60f-habin-s-projects.vercel.app`, GitHub deployment 7325334016) ← 되돌리기용 |
+| 2 | 배포 전 GET(기준값) | 아래 표와 같음 |
+| 3 | 머지 | 사용자 "머지해" → main이 `9a46d67` 그대로인지 확인 → 로컬 `--no-ff` merge commit **`38ec710`**, 병합 결과 `npm test` 566개 통과 → push(PR 없음) |
+| 4 | 자동 배포 | GitHub deployment 7348683148(Production, `38ec710`) **success** 10-27 11:23 KST, `onecarelandingprogram-7bhgpgl2u-habin-s-projects.vercel.app`. dpl_ ID는 Vercel CLI·로그인이 없어 못 읽음(Vercel 대시보드에서 위 URL로 확인 가능) |
+| 5 | 배포 후 GET(읽기만) | 아래 표 — 배포 전과 같음, 모두 정상 |
+
+| 확인 | 배포 전(11:22) | 배포 후(11:24) |
+| --- | --- | --- |
+| `/` | 200, H1 1개, 오류 화면 없음 | 같음 |
+| `/dangjin12`·`/zxcasd1` | 200, H1 1개, JSON-LD 8개 | 같음 |
+| sitemap.xml | 200, 1,161개·중복 0 | 같음 |
+| `/admin`·`/admin/pages` / `/login` | 307 → `/login` / 200 | 같음 |
+
+- 로그인한 관리자 화면(체크칸·필터·`?copy=done|todo` 관계 조인)은 계정이 없어 Claude가 열어보지 않음 → **사용자 확인 필요**. 체크는 운영 데이터를 바꾸므로 Claude가 누르지 않음
+- 되돌리기: Vercel에서 `dpl_48gHwvsYw2csMeUXP8qAtDGRWaad`로 promote. DB 변경이 없어 그대로 돌아감
+- 이 기록 커밋은 `feature/list-copy-check`에만 둠(main에 올리면 문서만으로 운영 재배포가 생김). 다음 머지 때 함께 main에 들어감
