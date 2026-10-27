@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-26 (feature/photos: 사진 보관함·페이지 사진 3장·로고·엑셀 사진 칸(019), 운영 미적용·미배포 / 그 전: admin-tweaks 배포 완료 main `9a46d67`)
+마지막 업데이트: 2026-10-27 (feature/photos: 최신 main `38ec710`(list-copy-check 배포 완료) 합침, 사진 기능 이어서 작업 중·019 운영 미적용)
 
 ## 배경
 
@@ -932,3 +932,13 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 2. 019만 적용된 동안(머지 전) 예전 코드의 이미지 올리기는 2MB 넘는 파일이 거절됨(압축 없음) → 019 적용 후 바로 머지
 3. 머지 → 자동 배포 → 보관함 올리기·고르기·삭제 막힘, 페이지 사진 저장, 랜딩 갤러리·og:image 확인
 - 기존 페이지 사진(예전 `landing-pages/` 24개 파일)은 보관함 목록에 없다 — 그대로 보이고 og:image도 예전처럼 사진1 원본. 보관함으로 옮기려면 따로 작업(백업·승인 후)
+
+## 랜딩페이지 목록 URL 복사완료 체크 — `feature/list-copy-check` (2026-10-27, migration 없음·운영 DB 접속 없음·배포 안 함)
+
+- 목록 줄마다 [URL 복사] 오른쪽에 [☐ 복사완료](공개 페이지만, 왼쪽 업체명 선택 체크칸과 별개). 복사하면 자동 체크 + "복사됨", 직접 체크·해제 가능, 저장 실패 시 되돌리고 안내
+- 저장은 운영에 이미 있는 `search_submission_checks`(018) 그대로 → 공개 대기열 '공개된 주소' 카드와 같은 체크. 체크 action은 `/admin/queue`·`/admin/pages` 둘 다 갱신
+- 목록 위 필터 전체 / 복사완료 / 안 한 것(`?copy=done|todo`) + "n / 전체 복사완료"(검색 조건에 맞는 공개 페이지 기준). 검색·페이지 나눔과 함께 유지
+- 필터는 서버에서 PostgREST 관계 조인으로: 복사완료 `search_submission_checks!inner(landing_page_id)`, 안 한 것 `search_submission_checks(landing_page_id)` + `.is("search_submission_checks", null)`(anti join, PostgREST 11.1+). '전체'는 기존 조회 그대로 + 화면의 50개만 체크 조회
+- 체크 상태를 못 읽으면 숫자 대신 안내, 체크칸 숨김(목록·URL 복사는 그대로)
+- 테스트: `tests/list-copy-check.db.test.tsx`(PGlite). PGlite 어댑터에 관계 조인(`table(cols)`·`!inner`·`is(table, null)`) 지원 추가
+- ⚠ 관계 조인 문법은 실제 PostgREST(운영)에서는 아직 확인 안 함 — 이 PC에 `.env.local`이 없어 읽기 확인도 못 함. 배포 뒤 `/admin/pages?copy=done`·`?copy=todo` 화면을 한 번 열어 확인할 것

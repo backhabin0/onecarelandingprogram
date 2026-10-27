@@ -106,7 +106,10 @@ export async function getQueueRenameTargetsAction(
   return { data: data.map((row) => ({ id: row.id, businessName: row.business_name })), error };
 }
 
-/** 공개된 주소 카드: 수집 요청 완료 체크/해제(DB 저장 — 다른 PC에서도 보임) */
+/**
+ * 수집 요청(URL 복사) 완료 체크/해제(DB 저장 — 다른 PC에서도 보임).
+ * 공개 대기열 '공개된 주소' 카드와 랜딩페이지 목록의 복사완료 칸이 같이 쓴다.
+ */
 export async function setSearchSubmissionCheckAction(
   landingPageId: unknown,
   checked: unknown
@@ -116,6 +119,9 @@ export async function setSearchSubmissionCheckAction(
     return { success: false, error: "잘못된 요청입니다." };
   }
   const result = await setSearchSubmissionCheck(landingPageId, checked);
-  if (result.success) revalidatePath("/admin/queue");
+  if (result.success) {
+    revalidatePath("/admin/queue");
+    revalidatePath("/admin/pages");
+  }
   return result;
 }

@@ -2,20 +2,27 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import type { LandingPageCopyFilter } from "@/lib/landing-pages";
 
 interface PageSearchFormProps {
   currentSearch: string;
+  /** 지금 URL 복사 필터(검색해도 유지) */
+  currentCopyFilter?: LandingPageCopyFilter;
 }
 
 /** 랜딩페이지 목록 검색(업체명·제목·URL). 검색하면 1페이지부터 보여준다. */
-export default function PageSearchForm({ currentSearch }: PageSearchFormProps) {
+export default function PageSearchForm({ currentSearch, currentCopyFilter = "all" }: PageSearchFormProps) {
   const router = useRouter();
   const [searchInput, setSearchInput] = useState(currentSearch);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const params = new URLSearchParams();
     const term = searchInput.trim();
-    router.push(term ? `/admin/pages?${new URLSearchParams({ search: term })}` : "/admin/pages");
+    if (term) params.set("search", term);
+    if (currentCopyFilter !== "all") params.set("copy", currentCopyFilter);
+    const query = params.toString();
+    router.push(`/admin/pages${query ? `?${query}` : ""}`);
   };
 
   return (

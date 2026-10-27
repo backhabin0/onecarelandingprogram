@@ -68,12 +68,28 @@ interface GetLandingPagesPageResult {
 const LANDING_PAGE_SEARCH_COLUMNS = ["business_name", "title", "slug"] as const;
 
 /**
+ * 관리자 랜딩페이지 목록의 URL 복사 체크 필터. 체크는 공개 대기열 '공개된 주소' 카드와 같은
+ * search_submission_checks(018)를 쓴다. done/todo는 공개 페이지만 대상으로 한다
+ * (비공개 페이지에는 체크칸이 없다).
+ */
+export type LandingPageCopyFilter = "all" | "done" | "todo";
+
+export function isLandingPageCopyFilter(value: string): value is LandingPageCopyFilter {
+  return value === "all" || value === "done" || value === "todo";
+}
+
+/** 체크 테이블 조인(PostgREST embedded resource). done은 `!inner`, todo는 `is null`(anti join) */
+const COPY_CHECK_EMBED = "search_submission_checks";
+
+/**
  * 관리자 랜딩페이지 목록(/admin/pages) 서버 페이지네이션 조회.
  * search가 있으면 업체명·제목·URL(slug) 중 하나라도 포함하는 페이지만.
+ * copyFilter가 done/todo면 URL 복사 체크가 있는/없는 공개 페이지만.
  */
 export async function getLandingPagesPage(
   page: number,
-  search = ""
+  search = "",
+  copyFilter: LandingPageCopyFilter = "all"
 ): Promise<GetLandingPagesPageResult> {
   try {
     const supabase = await getSupabaseServerClient();
@@ -83,7 +99,17 @@ export async function getLandingPagesPage(
     const term = sanitizeSearchTerm(search);
 
     const build = (head: boolean) => {
-      const query = supabase.from("landing_pages").select(head ? "id" : "*", { count: "exact", head });
+      const columns = head ? "id" : "*";
+      if (copyFilter === "all") {
+        const query = supabase.from("landing_pages").select(columns, { count: "exact", head });
+        return term ? query.or(ilikeAnyFilter(LANDING_PAGE_SEARCH_COLUMNS, term)) : query;
+      }
+      const embed = `${COPY_CHECK_EMBED}${copyFilter === "done" ? "!inner" : ""}(landing_page_id)`;
+      let query = supabase
+        .from("landing_pages")
+        .select(`${columns}, ${embed}`, { count: "exact", head })
+        .eq("status", "public");
+      if (copyFilter === "todo") query = query.is(COPY_CHECK_EMBED, null);
       return term ? query.or(ilikeAnyFilter(LANDING_PAGE_SEARCH_COLUMNS, term)) : query;
     };
 
@@ -105,7 +131,13 @@ export async function getLandingPagesPage(
       return { data: [], count: 0, error: "랜딩페이지 목록을 불러오지 못했습니다." };
     }
 
-    return { data: (data as LandingPage[]) ?? [], count: count ?? 0, error: null };
+    // 필터용으로 붙인 조인 칸은 화면에 넘기지 않는다.
+    const rows = ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => {
+      const page = { ...row };
+      delete page[COPY_CHECK_EMBED];
+      return page as unknown as LandingPage;
+    });
+    return { data: rows, count: count ?? 0, error: null };
   } catch (err) {
     console.error("[landing_pages] client error:", err);
     return {
@@ -116,6 +148,40 @@ export async function getLandingPagesPage(
           ? err.message
           : "랜딩페이지 목록을 불러오는 중 오류가 발생했습니다.",
     };
+  }
+}
+
+/**
+ * 목록 위 "n / 전체 복사완료" 숫자: 검색 조건에 맞는 공개 페이지 수와 그중 URL 복사 체크된 수.
+ * head count만 쓴다. 체크 테이블을 읽지 못하면 error(목록은 그대로 보여 준다).
+ */
+export async function getLandingPageCopyCounts(
+  search = ""
+): Promise<{ data: { checked: number; total: number }; error: string | null }> {
+  const failure = { data: { checked: 0, total: 0 }, error: "복사 완료 표시를 불러오지 못했습니다." };
+  try {
+    const supabase = await getSupabaseServerClient();
+    const term = sanitizeSearchTerm(search);
+    const countPublic = (columns: string) => {
+      const query = supabase
+        .from("landing_pages")
+        .select(columns, { count: "exact", head: true })
+        .eq("status", "public");
+      return term ? query.or(ilikeAnyFilter(LANDING_PAGE_SEARCH_COLUMNS, term)) : query;
+    };
+    const [totalRes, checkedRes] = await Promise.all([
+      countPublic("id"),
+      countPublic(`id, ${COPY_CHECK_EMBED}!inner(landing_page_id)`),
+    ]);
+    const firstError = totalRes.error ?? checkedRes.error;
+    if (firstError) {
+      console.error("[landing_pages] copy count error:", firstError);
+      return failure;
+    }
+    return { data: { checked: checkedRes.count ?? 0, total: totalRes.count ?? 0 }, error: null };
+  } catch (err) {
+    console.error("[landing_pages] client error:", err);
+    return failure;
   }
 }
 
