@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-27 (feature/photos: 최신 main 합침 + 사진 설명·대기열 로고·AI 프롬프트 사진 목록·공통 사진 설정, 019 운영 미적용·미배포)
+마지막 업데이트: 2026-10-27 (feature/photos 운영 배포 완료: migration 019 적용·main `a9d20a4`)
 
 ## 배경
 
@@ -956,6 +956,42 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 검증: `npm test` **654개 통과**(합친 뒤 627 → 654), `tsc`·`eslint`·`next build` ✅. 일부러 망가뜨려 확인: 보관함 설명 alt 대체를 빼면 3개, 공통 사진의 같은 사진 건너뛰기를 빼면 1개 실패(원복). 브라우저 압축·localStorage·실제 클릭은 자동 테스트 없음(순수 함수·정적 화면으로 확인) → 미리보기에서 확인 필요.
 
 배포할 때 순서는 위와 같다(백업 → **019 먼저 적용** → 머지). 019 내용이 늘었으니 적용 전에 파일을 다시 볼 것.
+
+### 운영 배포 ✅ (2026-10-27, 사용자 단계별 승인)
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | 운영 DB 백업(SELECT만) | `C:\Users\user\Documents\onecare-backup\2026-10-27_photos-deploy\` — 13개 테이블 전부 받기 전 = 받은 뒤 = 저장 행 수 = 고유 기본키(landing_pages 1,157, events 628, faqs 342, queue 135, seo 116, indexnow 110·3, 상담 7, publish_runs 3, 수집 체크 1, 설정 3개 각 1) + `schema.json`(칸 125·제약 69·인덱스 28·트리거 4·함수 7·정책 35·확장 6·버킷 1·cron 1) + Storage 24개 파일(44,335,299 B, 크기 일치). 스크립트 `scripts\backup.mjs`(지난번과 같음) |
+| 2 | 019 사전 점검(`scripts\precheck-019.mjs`) | 019 미적용 확인, 역할·`auth.uid()`·`gen_random_uuid()` 있음(PG 17.6), **운영 공개 함수 = 016 본문과 글자 단위로 같음**(덮어써도 잃는 것 없음), 실행 권한 authenticated만, Storage 정책 005 그대로, 파일 24개 모두 `landing-pages/`(2MB 넘는 기존 파일 10개 — 상한은 새로 올리는 파일만), cron 09:00 KST(그날 실행 끝난 뒤 적용) |
+| 2 | migration 019 | `apply-019.sql`(`begin;` + 커밋 `29ac003`의 019 + `commit;`) 실행 ✅ exit 0. 확인(`scripts\verify-019.mjs`): media_assets(RLS·정책 4·설명 칸)·페이지/대기열 새 칸·대기열 로고·대표 로고·버킷 2MB·업로드 경로 제한·공개 함수 로고 복사·권한 그대로. anon은 media_assets 0행·추가는 RLS 위반(42501)으로 막힘(롤백 트랜잭션, 남은 행 0). 기존 13개 테이블 행 수 백업과 같음. 사이트(이전 코드) 정상 |
+| 3 | 배포 전 운영 | `38ec710` = GitHub deployment 7348683148 (`onecarelandingprogram-7bhgpgl2u-habin-s-projects.vercel.app`, list-copy-check 배포) ← 되돌리기용. dpl_ ID는 Vercel 로그인이 없어 못 읽음 |
+| 3 | 머지 | 사용자 승인 → main이 `38ec710` 그대로인지 확인 → 로컬 `--no-ff` merge commit **`a9d20a4`**, 병합 결과 `npm test` 654개 통과 → push(PR 없음) → 자동 배포 GitHub deployment 7349262755 **success**(`onecarelandingprogram-2qkloz6zc-habin-s-projects.vercel.app`, 10-27 12:06 KST) |
+| 4 | 배포 후 확인(GET·읽기만) | 아래 표 — 모두 정상 |
+
+| 확인 | 결과 |
+| --- | --- |
+| `/`, `/dangjin12`, `/zxcasd1` | 200, H1 1개, JSON-LD 8개, 오류 화면 없음(배포 전과 같음) |
+| 랜딩 `/osan-segyo-drain-unblocking-20261018-0040`(사진1+로고) | 200, H1 1, `<img>` 2개 모두 alt·200, og:image = 사진1(예전 `landing-pages/` 파일, 200 image/png), JSON-LD 4블록 유효(WebPage·LocalBusiness·FAQPage·BreadcrumbList), LocalBusiness `image` 배열(1), `logo` 있음 |
+| 랜딩 `/qwertt12`(사진1만) | 200, `<img>` 1개 alt·200, og:image 사진1, `image` 배열(1), logo 없음(업체명은 대표 업체와 같지만 대표 로고가 아직 비어 있음) |
+| 랜딩 `/siheung-maehwa-dong-septic-unblocking`(사진 없음) | 200, `<img>` 0, og:image 없음, `image` 없음, JSON-LD 유효 |
+| 사진 갤러리 | 세 페이지 모두 사진2·3이 없어 갤러리 없음(정상) |
+| sitemap.xml·robots.txt·llms.txt | 200, sitemap 1,161개·중복 0 |
+| `/login` / `/admin`·`/admin/pages`·`/admin/media`·`/admin/bulk`·`/admin/queue` | 200 / 307 → `/login` |
+
+- 기존 페이지 사진(예전 `landing-pages/` 24개 파일)은 그대로 보이고, og:image도 예전처럼 사진1 원본(1200×630 JPEG는 보관함 사진부터)
+- 로그인한 관리자 화면(보관함 올리기·압축·설명·고르기·공통 사진·프롬프트)은 계정이 없어 Claude가 열어보지 않음 → 사용자 확인(아래 순서)
+- 되돌리기: Vercel에서 GitHub deployment 7348683148(`onecarelandingprogram-7bhgpgl2u-…`)로 promote. 019는 추가만이라 이전 코드와 함께 동작(이전 코드의 이미지 올리기는 압축 없이 2MB 상한에 걸림). DB까지 되돌릴 때만 `supabase/rollback/019_down.sql`(보관함 목록·사진2·3·로고 칸 값이 지워짐 — 이번 백업으로 복구 가능)
+- 이 기록 커밋은 `feature/photos`에만 둠(main에 올리면 문서만으로 운영 재배포가 생김)
+
+### 사용자 화면 확인 순서(배포 후)
+
+1. 사진 보관함(`/admin/media`): 사진 2~3장(JPG, 2MB 넘는 것 1장 포함) 한꺼번에 + 설명 → 줄마다 "올림", 크기 2MB 이하·1600px, 설명 보임. 같은 사진 다시 → "이미 있는 사진". HEIC → 안내 문구. 로고(PNG 투명) → 512px·투명 유지
+2. 설명 고치기·검색(설명 낱말로)
+3. 페이지 수정: 사진1~3·로고 "보관함에서 고르기" → 설명 칸 자동 → "사진 저장" → 공개 페이지 갤러리·공유 미리보기(og 1200×630)
+4. 쓰는 사진 삭제 → 막힘 문구, 안 쓰는 사진 삭제 → 됨
+5. 설정 > 대표 업체 로고 → 업체명이 같은 페이지 헤더에 로고
+6. AI 대량 생성 > 프롬프트 만들기 → "사진 N장이 들어갑니다", 프롬프트에 목록·규칙 9
+7. 올리기: 공통 사진 4칸 고르기 → 사진 칸 빈 엑셀/붙여넣기 검사 → "공통 사진을 n행에 넣어" 안내·오류 없음 → 새로고침해도 선택 기억 → 대기열 넣기 → 대기열 항목에 사진·로고 주소
 
 ## 랜딩페이지 목록 URL 복사완료 체크 — `feature/list-copy-check` (2026-10-27, migration 없음·운영 DB 접속 없음·배포 안 함)
 
