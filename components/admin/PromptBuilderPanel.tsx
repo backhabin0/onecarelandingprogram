@@ -10,6 +10,7 @@ import {
   buildBulkPrompts,
   parseSlugList,
   type PromptBusinessInfo,
+  type PromptPhoto,
 } from "@/lib/bulk-upload/prompt";
 
 const inputClassName =
@@ -22,7 +23,14 @@ const KEYWORD_LABEL = { name: "키워드", slug: "keyword_slug" };
  * AI(ChatGPT·Claude 등)에 붙여넣을 프롬프트 만들기. 이 화면은 AI를 직접 호출하지 않는다.
  * AI가 돌려준 표는 "올리기" 탭에 붙여넣거나 엑셀로 저장해 올린다.
  */
-export default function PromptBuilderPanel() {
+interface PromptBuilderPanelProps {
+  /** 사진 보관함의 사진(로고 제외) — 있으면 프롬프트에 목록과 사진 고르기 규칙이 들어간다 */
+  libraryPhotos?: readonly PromptPhoto[];
+  /** 보관함 목록을 못 불러왔을 때 안내 */
+  libraryPhotosError?: string | null;
+}
+
+export default function PromptBuilderPanel({ libraryPhotos = [], libraryPhotosError = null }: PromptBuilderPanelProps) {
   const [regionsText, setRegionsText] = useState("");
   const [keywordsText, setKeywordsText] = useState("");
   const [business, setBusiness] = useState<PromptBusinessInfo>({
@@ -42,7 +50,7 @@ export default function PromptBuilderPanel() {
   const inputErrors = [...regions.errors, ...keywords.errors].map((e) => e.message);
   const result =
     inputErrors.length === 0 && (regions.items.length > 0 || keywords.items.length > 0)
-      ? buildBulkPrompts({ regions: regions.items, keywords: keywords.items, business })
+      ? buildBulkPrompts({ regions: regions.items, keywords: keywords.items, business, photos: libraryPhotos })
       : null;
 
   const set = (field: keyof PromptBusinessInfo, value: string) =>
@@ -177,6 +185,12 @@ export default function PromptBuilderPanel() {
           프롬프트를 ChatGPT·Claude 같은 AI에 붙여넣고, AI가 준 표를 &quot;올리기&quot; 탭의 붙여넣기 칸에
           넣거나 엑셀로 저장해 올리세요. 올린 뒤에는 엑셀 업로드와 같은 검사를 거칩니다.
         </p>
+        <p className="mt-2 text-sm text-slate-600" data-testid="prompt-photo-note">
+          {libraryPhotos.length > 0
+            ? `사진 보관함의 사진 ${libraryPhotos.length.toLocaleString()}장(파일 이름·설명)이 프롬프트에 들어갑니다. AI가 페이지 내용에 맞는 사진을 골라 대표 사진·사진2·사진3 칸에 파일 이름으로 넣습니다.`
+            : "사진 보관함에 사진이 없어 사진 칸은 비워 둡니다. 보관함에 사진을 올리면 AI가 사진도 골라 넣습니다."}
+        </p>
+        {libraryPhotosError ? <p className="mt-1 text-sm text-amber-700">{libraryPhotosError}</p> : null}
         {result && result.errors.length > 0 ? (
           <ul className="mt-3 list-disc pl-5 text-sm text-red-600">
             {result.errors.map((message) => (

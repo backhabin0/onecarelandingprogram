@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-27 (feature/photos: 최신 main `38ec710`(list-copy-check 배포 완료) 합침, 사진 기능 이어서 작업 중·019 운영 미적용)
+마지막 업데이트: 2026-10-27 (feature/photos: 최신 main 합침 + 사진 설명·대기열 로고·AI 프롬프트 사진 목록·공통 사진 설정, 019 운영 미적용·미배포)
 
 ## 배경
 
@@ -932,6 +932,30 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 2. 019만 적용된 동안(머지 전) 예전 코드의 이미지 올리기는 2MB 넘는 파일이 거절됨(압축 없음) → 019 적용 후 바로 머지
 3. 머지 → 자동 배포 → 보관함 올리기·고르기·삭제 막힘, 페이지 사진 저장, 랜딩 갤러리·og:image 확인
 - 기존 페이지 사진(예전 `landing-pages/` 24개 파일)은 보관함 목록에 없다 — 그대로 보이고 og:image도 예전처럼 사진1 원본. 보관함으로 옮기려면 따로 작업(백업·승인 후)
+
+### 이어서 한 작업 (2026-10-27, 운영 DB 접속 없음·019 미적용·배포 안 함)
+
+계획 대비 빠져 있던 것을 채웠다. 먼저 최신 main(`38ec710`, list-copy-check 배포 완료)을 합침(충돌 2곳: HANDOFF·PGlite 어댑터 — 양쪽 모두 살림).
+
+- **사진 설명**: `media_assets.description`(200자, 기본 빈 값) + authenticated 수정 정책(019에 추가). 올리기 화면에 "설명" 칸(이번에 올리는 사진 모두에 붙음), 보관함 목록에서 사진마다 고치기(바꾸면 '저장'), 검색은 이름·설명. 같은 사진을 다시 올리면 기존 설명이 비어 있을 때만 채움
+- **설명 → alt**: 페이지·대기열 수정에서 보관함 사진을 고르면 비어 있던 설명(alt)에 보관함 설명. 엑셀 사진 칸이 보관함 사진이고 설명 칸이 비면 보관함 설명을 저장(주소로 쓴 사진은 그대로 비움)
+- **대기열 로고**: `landing_page_queue.logo_url`(500자) + 공개 함수가 페이지 `logo_url`로 복사(019 수정, 019_down이 지움). 엑셀 선택 칸 `로고`(양식에는 없음, 머리글을 넣으면 인식 — 보관함 이름 또는 주소, 없는 이름은 오류). 대기열 수정 화면에 로고 칸(로고 보관함에서 고르기). 삭제 안전장치 목록에 "대기열 로고"(공개 전만), 백업 version 4에 대기열 로고·보관함 설명(아직 배포 전이라 version 번호는 그대로 4)
+- **AI 프롬프트**: 프롬프트 만들기 화면이 보관함 사진(로고 제외, 이름 순, 1,000장 넘어도 전부)의 "파일 이름: 설명" 목록을 넣는다. 사진이 있으면 대표 사진 URL·사진2·사진3은 AI가 파일 이름으로 채우는 칸이 되고 규칙 9 추가: 내용에 맞는 사진, 목록 그대로의 이름만, 한 행에 같은 사진 두 번 금지, 여러 행에 몰리지 않게(한 사진 최대 = ⌈행×3 ÷ 사진 수⌉번, 나눈 프롬프트마다). 사진 설명 칸은 비워 두게 함(보관함 설명이 들어감). 보관함이 비면 예전 프롬프트와 글자 하나 다르지 않음. `docs/samples/prompt-with-photos.txt` 추가
+- **공통 사진 설정**(올리기 화면 맨 위): 로고·대표 사진(사진1)·현장 사진(사진2·3)을 보관함에서 고름. 검사 전에 **빈 칸에만** 보관함 이름으로 넣음(행에 값이 있으면 행 우선, 같은 행 다른 사진 칸에 이미 같은 사진이면 넣지 않음) → 이후 검사·서버 재검사가 엑셀에 이름을 쓴 것과 똑같이 처리(설명 alt·지운 사진은 오류). 마지막 선택은 이 브라우저(localStorage)에 기억. 파일을 읽은 뒤 바꾸면 다시 검사
+  - "현장 사진1~3"은 페이지 사진 칸이 3개(사진1=대표)라 **대표 사진(사진1) + 현장 사진(사진2·3)**으로 해석함
+
+| 구분 | 파일 |
+| --- | --- |
+| migration | `019_photo_library.sql`(설명 칸·수정 정책·대기열 로고·공개 함수 로고 복사), `019_down.sql` |
+| 보관함 | `lib/media/library.ts`(설명 정리·altAfterPick), `lib/media-assets.ts`(설명 저장·수정·프롬프트용 목록), `app/admin/media/actions.ts`, `lib/media/upload-client.ts`, `MediaUploadInput.tsx`, `MediaLibraryPanel.tsx`, `MediaDescriptionField.tsx`(신규), `PhotoSlotField.tsx`, `LandingPagePhotosCard.tsx` |
+| 엑셀·대기열 | `lib/bulk-upload/columns.ts`(로고 선택 칸), `check.ts`(로고·설명 alt), `common-photos.ts`(신규), `prompt.ts`, `app/admin/bulk/page.tsx`·`actions.ts`, `BulkUploadPanel.tsx`, `CommonPhotoSettingsCard.tsx`(신규), `PromptBuilderPanel.tsx`, `QueueItemForm.tsx`, `lib/publish-queue.ts`, `types/publish-queue.ts` |
+| 안전장치·백업 | `lib/storage/asset-references.ts`, `types/backup.ts`, `lib/backup/sanitize.ts`·`restore.ts` |
+| 예시 | `scripts/generate-samples.ts`, `docs/samples/README.md`, `docs/samples/prompt-with-photos.txt`(신규) |
+| 테스트 | `tests/photos.db.test.tsx`(+26개), 기존 테스트 데이터에 새 칸(`backup-publish-queue`·`bulk-upload-check`·`bulk-components`) |
+
+검증: `npm test` **654개 통과**(합친 뒤 627 → 654), `tsc`·`eslint`·`next build` ✅. 일부러 망가뜨려 확인: 보관함 설명 alt 대체를 빼면 3개, 공통 사진의 같은 사진 건너뛰기를 빼면 1개 실패(원복). 브라우저 압축·localStorage·실제 클릭은 자동 테스트 없음(순수 함수·정적 화면으로 확인) → 미리보기에서 확인 필요.
+
+배포할 때 순서는 위와 같다(백업 → **019 먼저 적용** → 머지). 019 내용이 늘었으니 적용 전에 파일을 다시 볼 것.
 
 ## 랜딩페이지 목록 URL 복사완료 체크 — `feature/list-copy-check` (2026-10-27, migration 없음·운영 DB 접속 없음·배포 안 함)
 

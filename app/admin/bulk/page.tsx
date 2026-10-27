@@ -4,6 +4,7 @@ import Card from "@/components/admin/Card";
 import BulkUploadPanel from "@/components/admin/BulkUploadPanel";
 import PromptBuilderPanel from "@/components/admin/PromptBuilderPanel";
 import { getSimilarityThresholds } from "@/lib/bulk-publish-settings";
+import { getLibraryPhotosForPrompt } from "@/lib/media-assets";
 
 // 유사도 기준값을 항상 최신 설정으로 보여준다.
 export const dynamic = "force-dynamic";
@@ -22,7 +23,11 @@ interface AdminBulkUploadPageProps {
 export default async function AdminBulkUploadPage({ searchParams }: AdminBulkUploadPageProps) {
   const { tab: tabParam } = await searchParams;
   const tab: BulkTab = tabParam === "prompt" ? "prompt" : "upload";
-  const { thresholds, error } = await getSimilarityThresholds();
+  const [{ thresholds, error }, libraryPhotos] = await Promise.all([
+    getSimilarityThresholds(),
+    // 프롬프트 만들기: 보관함 사진 목록(이름·설명)을 프롬프트에 넣는다
+    tab === "prompt" ? getLibraryPhotosForPrompt() : Promise.resolve({ data: [], error: null }),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -58,7 +63,7 @@ export default async function AdminBulkUploadPage({ searchParams }: AdminBulkUpl
       </nav>
 
       {tab === "prompt" ? (
-        <PromptBuilderPanel />
+        <PromptBuilderPanel libraryPhotos={libraryPhotos.data} libraryPhotosError={libraryPhotos.error} />
       ) : (
         <>
           <Card className="p-6">

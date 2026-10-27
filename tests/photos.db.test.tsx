@@ -66,6 +66,17 @@ const { default: MediaLibraryPanel } = await import("@/components/admin/MediaLib
 const { default: LandingPagePhotosCard, EMPTY_PHOTOS } = await import("@/components/admin/LandingPagePhotosCard");
 const { default: QueueItemForm } = await import("@/components/admin/QueueItemForm");
 const { default: AdminSidebar } = await import("@/components/admin/AdminSidebar");
+// 사진 설명·대기열 로고·AI 프롬프트·공통 사진 설정
+const { altAfterPick, sanitizeMediaDescription } = await import("@/lib/media/library");
+const { getLibraryPhotosForPrompt, listMediaAssets } = await import("@/lib/media-assets");
+const { updateMediaAssetDescriptionAction } = await import("@/app/admin/media/actions");
+const { buildBulkPrompts, maxUsesPerPhoto } = await import("@/lib/bulk-upload/prompt");
+const { COMMON_PHOTO_SLOTS, applyCommonPhotos, parseCommonPhotoSettings } = await import(
+  "@/lib/bulk-upload/common-photos"
+);
+const { default: CommonPhotoSettingsCard } = await import("@/components/admin/CommonPhotoSettingsCard");
+const { default: PromptBuilderPanel } = await import("@/components/admin/PromptBuilderPanel");
+const { default: MediaUploadInput } = await import("@/components/admin/MediaUploadInput");
 
 const SUPA = "https://proj.supabase.co";
 const PUBLIC = `${SUPA}/storage/v1/object/public/landing-page-assets`;
@@ -128,12 +139,12 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-async function insertAsset(n: number, name: string, kind: "photo" | "logo" = "photo") {
+async function insertAsset(n: number, name: string, kind: "photo" | "logo" = "photo", description = "") {
   const { rows } = await db.query<{ id: string }>(
     `insert into public.media_assets
-       (sha256, kind, name, storage_path, url, og_storage_path, og_url, mime, width, height, bytes, og_bytes)
-     values ($1, $2, $3, $4, $5, $6, $7, 'image/webp', 1600, 1200, 300000, 150000) returning id`,
-    [sha(n), kind, name, `library/${sha(n)}.webp`, libUrl(n), `library/${sha(n)}-og.jpg`, ogUrl(n)]
+       (sha256, kind, name, description, storage_path, url, og_storage_path, og_url, mime, width, height, bytes, og_bytes)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, 'image/webp', 1600, 1200, 300000, 150000) returning id`,
+    [sha(n), kind, name, description, `library/${sha(n)}.webp`, libUrl(n), `library/${sha(n)}-og.jpg`, ogUrl(n)]
   );
   return rows[0].id;
 }
@@ -1095,6 +1106,44 @@ describe("백업 version 4", () => {
     expect(fake.tables.landing_pages[0]).toMatchObject({ title: "백업 제목", image_2_url: "https://keep.test/2.jpg" });
     expect(fake.tables.site_profile[0]).toMatchObject({ business_name: "지금", logo_url: "https://keep.test/logo.png" });
   });
+
+  it("대기열 로고·보관함 설명도 내보내고 다시 읽는다", async () => {
+    await insertAsset(1, "현장1.jpg", "photo", "정화조 작업 현장");
+    await insertQueue("q", { logo_url: libUrl(1) });
+    const { backup } = await buildBackupFile();
+    expect(backup!.data.publishQueue[0]).toMatchObject({ logo_url: libUrl(1) });
+    expect(backup!.data.mediaAssets[0]).toMatchObject({ name: "현장1.jpg", description: "정화조 작업 현장" });
+
+    const parsed = parseAndValidateBackupFile(JSON.stringify(backup));
+    expect(parsed.success).toBe(true);
+    expect(parsed.backup!.data.publishQueue[0]).toMatchObject({ logo_url: libUrl(1) });
+    expect(parsed.backup!.data.mediaAssets[0].description).toBe("정화조 작업 현장");
+
+    // version 4 대기열 행에 로고 칸이 없으면 그 행만 뺀다
+    const raw = JSON.parse(JSON.stringify(backup));
+    delete raw.data.publishQueue[0].logo_url;
+    expect(parseAndValidateBackupFile(JSON.stringify(raw)).invalidCounts).toMatchObject({ publishQueue: 1 });
+  });
+
+  it("보관함 설명: 없으면 빈 값, 200자를 넘거나 문자열이 아니면 그 행만 뺀다", () => {
+    const { description: _omit, ...withoutDescription } = asset(1, "a.jpg");
+    void _omit;
+    const parsed = parseAndValidateBackupFile(
+      v4File({
+        mediaAssets: [
+          withoutDescription,
+          { ...asset(2, "b.jpg"), description: "가".repeat(201) },
+          { ...asset(3, "c.jpg"), description: 3 },
+          { ...asset(4, "d.jpg"), description: "배관 내시경" },
+        ],
+      })
+    );
+    expect(parsed.invalidCounts).toEqual({ mediaAssets: 2 });
+    expect(parsed.backup!.data.mediaAssets.map((a) => [a.name, a.description])).toEqual([
+      ["a.jpg", ""],
+      ["d.jpg", "배관 내시경"],
+    ]);
+  });
 });
 
 // ============================================================
@@ -1170,5 +1219,450 @@ describe("관리자 화면(정적 렌더링)", () => {
     const html = renderToStaticMarkup(<AdminSidebar />);
     expect(html).toContain('href="/admin/media"');
     expect(text(html)).toContain("사진 보관함");
+  });
+});
+
+// ============================================================
+// 사진 설명(보관함) · 대기열 로고 · AI 프롬프트 · 공통 사진 설정
+// ============================================================
+
+const SAMPLE_VALUES = {
+  region: "산본동",
+  keyword: "배관 수리",
+  regionSlug: "sanbon",
+  keywordSlug: "pipe",
+  businessName: "원케어",
+  title: "산본동 배관 수리",
+  description: "가".repeat(220),
+};
+const checkCtx = (library: { name: string; url: string; description?: string }[] = []) => ({
+  existingSlugs: [],
+  existingPairs: [],
+  corpus: [],
+  thresholds: DEFAULT_SIMILARITY_THRESHOLDS,
+  mediaLibrary: library.map((entry) => ({ description: "", ...entry })),
+});
+const checkOne = (values: Record<string, string>, library?: { name: string; url: string; description?: string }[]) =>
+  checkBulkUploadRows([{ rowNumber: 2, values, warnings: [] }], checkCtx(library)).rows[0];
+
+describe("019 보강: 보관함 설명·대기열 로고", () => {
+  it("설명 칸: 기본값 빈 값, 200자 제한. 로그인 사용자만 고칠 수 있다(anon은 0행)", async () => {
+    const id = await insertAsset(1, "a.jpg");
+    expect((await db.query("select description from public.media_assets where id = $1", [id])).rows).toEqual([
+      { description: "" },
+    ]);
+    await expect(db.query("update public.media_assets set description = $1", ["가".repeat(201)])).rejects.toThrow();
+
+    await asRole(db, "anon", (tx) => tx.query("update public.media_assets set description = 'anon'"));
+    await asRole(db, "authenticated", (tx) => tx.query("update public.media_assets set description = '정화조'"));
+    expect((await db.query("select description from public.media_assets")).rows).toEqual([{ description: "정화조" }]);
+  });
+
+  it("대기열 logo_url 칸(500자): 공개할 때 페이지 로고로 복사하고, 019_down이 지운다", async () => {
+    await insertQueue("with-logo", { logo_url: libUrl(9) });
+    await insertQueue("no-logo");
+    await expect(insertQueue("too-long", { logo_url: `https://x/${"a".repeat(500)}` })).rejects.toThrow();
+    await asRole(db, "authenticated", (tx) => tx.query("select public.publish_queued_landing_pages(10)"));
+    expect((await db.query("select slug, logo_url from public.landing_pages order by slug")).rows).toEqual([
+      { slug: "no-logo", logo_url: null },
+      { slug: "with-logo", logo_url: libUrl(9) },
+    ]);
+
+    await db.exec(readRollback("019_down.sql"));
+    const columns = await db.query(
+      "select 1 from information_schema.columns where table_name = 'landing_page_queue' and column_name = 'logo_url'"
+    );
+    expect(columns.rows).toEqual([]);
+  });
+
+  it("대기열 로고로 쓰는 보관함 사진은 지우지 않는다", async () => {
+    const id = await insertAsset(9, "로고.png", "logo");
+    await insertQueue("q", { logo_url: libUrl(9) });
+    const result = await deleteMediaAssetAction(id);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("대기열 로고 1곳");
+    expect(IMAGE_REFERENCE_COLUMNS).toContainEqual(
+      expect.objectContaining({ table: "landing_page_queue", column: "logo_url", unpublishedOnly: true })
+    );
+  });
+});
+
+describe("보관함 사진 설명", () => {
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", SUPA);
+  });
+  const putFiles = (n: number) => {
+    storage.objects.set(`library/${sha(n)}.webp`, 300_000);
+    storage.objects.set(`library/${sha(n)}-og.jpg`, 150_000);
+  };
+  const input = (n: number, description?: unknown) => ({
+    sha256: sha(n),
+    kind: "photo" as const,
+    fileName: `현장${n}.jpg`,
+    description,
+    mime: "image/webp" as const,
+    width: 1600,
+    height: 1200,
+  });
+
+  it("정리: 줄바꿈·제어 문자·연속 공백을 정리하고 200자까지", () => {
+    expect(sanitizeMediaDescription("  정화조\n작업\t\t현장  ")).toBe("정화조 작업 현장");
+    expect(sanitizeMediaDescription("<b>배관</b>")).toBe("b 배관 /b");
+    expect(sanitizeMediaDescription("가".repeat(250))).toHaveLength(200);
+  });
+
+  it("올릴 때 적은 설명을 저장하고, 같은 사진을 다시 올리면 비어 있을 때만 채운다", async () => {
+    putFiles(1);
+    const first = await registerMediaAssetAction(input(1, " 배관 내시경 "));
+    expect(first.asset?.description).toBe("배관 내시경");
+    const again = await registerMediaAssetAction(input(1, "다른 설명"));
+    expect(again.reused).toBe(true);
+    expect(again.asset?.description).toBe("배관 내시경");
+
+    putFiles(2);
+    await registerMediaAssetAction(input(2));
+    const filled = await registerMediaAssetAction(input(2, "정화조 작업 현장"));
+    expect(filled.asset?.description).toBe("정화조 작업 현장");
+    expect((await registerMediaAssetAction(input(3, 3))).error).toBe("잘못된 요청입니다.");
+  });
+
+  it("보관함에서 설명 고치기: 정리해서 저장, 잘못된 요청·없는 사진은 거절", async () => {
+    const id = await insertAsset(1, "a.jpg");
+    const result = await updateMediaAssetDescriptionAction(id, "  정화조\n작업 현장 ");
+    expect(result).toMatchObject({ success: true, asset: { id, description: "정화조 작업 현장" } });
+    expect((await updateMediaAssetDescriptionAction(id, "")).asset?.description).toBe("");
+    expect(await updateMediaAssetDescriptionAction("not-uuid", "x")).toEqual({ success: false, error: "잘못된 요청입니다." });
+    expect(await updateMediaAssetDescriptionAction(id, 3)).toEqual({ success: false, error: "잘못된 요청입니다." });
+    expect((await updateMediaAssetDescriptionAction("99999999-9999-4999-8999-999999999999", "x")).error).toMatch(
+      /찾을 수 없습니다/
+    );
+  });
+
+  it("검색은 이름과 설명 모두에서 찾는다", async () => {
+    await insertAsset(1, "a.jpg", "photo", "정화조 작업 현장");
+    await insertAsset(2, "정화조.jpg", "photo");
+    await insertAsset(3, "c.jpg", "photo", "배관 내시경");
+    const { data } = await listMediaAssets({ search: "정화조" });
+    expect(data.map((a) => a.name).sort()).toEqual(["a.jpg", "정화조.jpg"]);
+  });
+
+  it("고른 사진의 설명: 지금 설명이 비어 있을 때만 보관함 설명을 쓴다", () => {
+    expect(altAfterPick("", { description: "배관 내시경" })).toBe("배관 내시경");
+    expect(altAfterPick("   ", { description: " 배관 " })).toBe("배관");
+    expect(altAfterPick(null, { description: "" })).toBe("");
+    expect(altAfterPick("직접 쓴 설명", { description: "배관 내시경" })).toBe("직접 쓴 설명");
+  });
+});
+
+describe("엑셀 사진 칸: 보관함 설명을 alt로, 로고 칸", () => {
+  const library = [
+    { name: "현장1.jpg", url: libUrl(1), description: "정화조 작업 현장" },
+    { name: "현장2.jpg", url: libUrl(2), description: "" },
+    { name: "로고.png", url: libUrl(9), description: "" },
+  ];
+
+  it("보관함 사진이고 설명 칸이 비면 보관함 설명, 적은 설명은 그대로, 주소·설명 없는 사진은 비움", () => {
+    const row = checkOne(
+      {
+        ...SAMPLE_VALUES,
+        mainImageUrl: "현장1",
+        image2Url: "현장1.jpg",
+        image2Alt: "직접 쓴 설명",
+        image3Url: "현장2.jpg",
+      },
+      library
+    );
+    expect(row.errors).toEqual([]);
+    expect(row.queueRow).toMatchObject({
+      main_image_url: libUrl(1),
+      main_image_alt: "정화조 작업 현장",
+      image_2_alt: "직접 쓴 설명",
+      image_3_url: libUrl(2),
+      image_3_alt: null,
+    });
+    const byUrl = checkOne({ ...SAMPLE_VALUES, mainImageUrl: "https://img.example/1.jpg" }, library);
+    expect(byUrl.queueRow).toMatchObject({ main_image_url: "https://img.example/1.jpg", main_image_alt: null });
+  });
+
+  it("로고 칸: 보관함 이름·주소를 받고, 없는 이름·틀린 주소는 오류", () => {
+    expect(checkOne({ ...SAMPLE_VALUES, logoUrl: "로고" }, library).queueRow.logo_url).toBe(libUrl(9));
+    expect(checkOne({ ...SAMPLE_VALUES, logoUrl: "https://img.example/logo.png" }, library).queueRow.logo_url).toBe(
+      "https://img.example/logo.png"
+    );
+    expect(checkOne(SAMPLE_VALUES, library).queueRow.logo_url).toBeNull();
+
+    const missing = checkOne({ ...SAMPLE_VALUES, logoUrl: "없는로고.png" }, library);
+    expect(missing.errors.map((e) => [e.code, e.fields, e.message])).toEqual([
+      ["photo_not_found", ["logoUrl"], expect.stringContaining('로고: 사진 보관함에 "없는로고.png" 사진이 없습니다')],
+    ]);
+    const invalid = checkOne({ ...SAMPLE_VALUES, logoUrl: "ftp://x/logo.png" }, library);
+    expect(invalid.errors[0]).toMatchObject({ code: "invalid_url", message: expect.stringContaining("로고 주소는") });
+    expect(collectPhotoValues([{ values: { mainImageUrl: "a", logoUrl: "로고.png" } }])).toEqual(["a", "로고.png"]);
+  });
+
+  it("엑셀에 '로고' 머리글을 넣으면 인식한다(양식에는 없는 선택 칸)", () => {
+    const headers = [...BULK_UPLOAD_COLUMNS.map((c) => c.header), "로고"];
+    const row = headers.map((_, i) => (i < 6 ? ["산본동", "배관", "sanbon", "pipe", "원케어", "제목"][i] : ""));
+    row[headers.length - 1] = "로고.png";
+    const parsed = sheetToUploadRows([headers, row]);
+    expect(parsed.ignoredHeaders).toEqual([]);
+    expect(parsed.rows[0].values).toMatchObject({ logoUrl: "로고.png" });
+    expect(BULK_UPLOAD_COLUMNS.map((c) => c.header)).not.toContain("로고");
+  });
+
+  it("대기열 저장 → 공개: 보관함 설명 alt와 로고가 페이지까지 간다", async () => {
+    await insertAsset(1, "현장1.jpg", "photo", "정화조 작업 현장");
+    await insertAsset(9, "로고.png", "logo");
+    const rows = [{ rowNumber: 2, values: { ...SAMPLE_VALUES, mainImageUrl: "현장1.jpg", logoUrl: "로고.png" }, warnings: [] }];
+    const result = await enqueueUploadRows({ rows, holdSimilar: false, batchId: "11111111-1111-4111-8111-111111111111" });
+    expect(result.results.map((r) => r.outcome)).toEqual(["ready"]);
+    expect((await db.query("select main_image_url, main_image_alt, logo_url from public.landing_page_queue")).rows).toEqual([
+      { main_image_url: libUrl(1), main_image_alt: "정화조 작업 현장", logo_url: libUrl(9) },
+    ]);
+    await asRole(db, "authenticated", (tx) => tx.query("select public.publish_queued_landing_pages(10)"));
+    expect((await db.query("select main_image_alt, logo_url from public.landing_pages")).rows).toEqual([
+      { main_image_alt: "정화조 작업 현장", logo_url: libUrl(9) },
+    ]);
+  });
+
+  it("대기열 수정: 로고 칸에 보관함 이름을 쓰면 주소로 저장", async () => {
+    await insertAsset(9, "로고.png", "logo");
+    const id = await insertQueue("edit-logo", { state: "draft" });
+    const result = await updateQueueItem(
+      id,
+      { ...SAMPLE_VALUES, regionSlug: "edit", keywordSlug: "logo", slug: "edit-logo", logoUrl: "로고.png" },
+      "ready"
+    );
+    expect(result.success).toBe(true);
+    expect((await db.query("select logo_url from public.landing_page_queue where id = $1", [id])).rows).toEqual([
+      { logo_url: libUrl(9) },
+    ]);
+  });
+});
+
+describe("AI 프롬프트: 보관함 사진 목록", () => {
+  const region = { name: "산본동", slug: "sanbon" };
+  const keyword = { name: "배관 수리", slug: "pipe" };
+  const business = {
+    businessName: "원케어",
+    phone: "",
+    kakaoUrl: "",
+    address: "",
+    template: "template-a",
+    industry: "",
+  };
+  const photos = [
+    { name: "배관내시경.jpg", description: "배관 내시경으로 막힌 곳 확인" },
+    { name: "하수구\t뚫음.jpg", description: "하수구\n작업" },
+    { name: "배관교체후.jpg", description: "" },
+  ];
+  const section = (prompt: string, title: string) => prompt.split(`[${title}`)[1]?.split("\n\n")[0] ?? "";
+
+  it("보관함 목록(로고 제외, 이름 순)을 1,000장 넘어도 전부 읽는다", async () => {
+    await db.query(
+      `insert into public.media_assets
+         (sha256, kind, name, description, storage_path, url, og_storage_path, og_url, mime, width, height, bytes, og_bytes)
+       select lpad(to_hex(i), 64, '0'), case when i = 1 then 'logo' else 'photo' end, 'p' || lpad(i::text, 4, '0') || '.jpg',
+              '설명 ' || i, 'library/' || lpad(to_hex(i), 64, '0') || '.webp', 'https://x.test/' || i || '.webp',
+              'library/' || lpad(to_hex(i), 64, '0') || '-og.jpg', 'https://x.test/' || i || '-og.jpg', 'image/webp', 10, 10, 1, 1
+         from generate_series(1, 1201) as i`
+    );
+    const { data, error } = await getLibraryPhotosForPrompt();
+    expect(error).toBeNull();
+    expect(data).toHaveLength(1200);
+    expect(data[0]).toEqual({ name: "p0002.jpg", description: "설명 2" });
+    expect(data.at(-1)).toEqual({ name: "p1201.jpg", description: "설명 1201" });
+  });
+
+  it("사진이 없으면 예전 프롬프트 그대로(사진 칸은 비워 둠)", () => {
+    const { prompts } = buildBulkPrompts({ regions: [region], keywords: [keyword], business });
+    expect(prompts[0].text).not.toContain("[사진 보관함");
+    expect(prompts[0].text).not.toMatch(/^9\./m);
+    expect(section(prompts[0].text, "비워 둘 칸")).toContain("대표 사진 URL");
+    expect(buildBulkPrompts({ regions: [region], keywords: [keyword], business, photos: [] }).prompts[0].text).toBe(
+      prompts[0].text
+    );
+  });
+
+  it("사진이 있으면: 목록(파일 이름: 설명), 사진 칸은 AI가 파일 이름으로, 설명 칸은 비워 두기, 고르게 나누기 규칙", () => {
+    const { prompts } = buildBulkPrompts({ regions: [region], keywords: [keyword], business, photos });
+    const prompt = prompts[0].text;
+    expect(section(prompt, "사진 보관함")).toBe(
+      [
+        " — 사진 칸에 쓸 수 있는 사진 3장(파일 이름: 설명)]",
+        "- 배관내시경.jpg: 배관 내시경으로 막힌 곳 확인",
+        "- 하수구 뚫음.jpg: 하수구 작업",
+        "- 배관교체후.jpg",
+      ].join("\n")
+    );
+    const empty = section(prompt, "비워 둘 칸");
+    expect(empty).not.toContain("대표 사진 URL");
+    expect(empty).toContain("- 시/군, city_slug, 현장 사례\n");
+    expect(empty.match(/사진2 설명/g)).toHaveLength(1);
+    expect(empty).toContain("고른 사진의 보관함 설명이 자동으로 들어갑니다");
+    expect(prompt).toContain(
+      "9. 행마다 페이지 내용(지역·키워드·문구)에 맞는 사진을 [사진 보관함]에서 골라 대표 사진 URL·사진2·사진3 칸에 파일 이름을"
+    );
+    expect(prompt).toContain("목록에 없는 파일 이름이나 인터넷 주소는 쓰지 마세요");
+    expect(prompt).toContain("같은 사진이 여러 행에 몰리지 않게 고르게 나눠 쓰세요(이 요청에서 한 사진은 1번까지)");
+    // 입력 표 머리글·행 수는 그대로
+    expect(prompt).toContain(`[입력 표] (1행)\n${BULK_UPLOAD_COLUMNS.map((c) => c.header).join("\t")}`);
+  });
+
+  it("한 사진 최대 사용 횟수 = 칸 수(행 × 3) ÷ 사진 수(올림), 나눈 프롬프트마다 따로 센다", () => {
+    expect(maxUsesPerPhoto(6, 4)).toBe(5);
+    expect(maxUsesPerPhoto(50, 200)).toBe(1);
+    expect(maxUsesPerPhoto(10, 3)).toBe(10);
+    expect(maxUsesPerPhoto(3, 0)).toBe(0);
+    const regions = Array.from({ length: 12 }, (_, i) => ({ name: `지역${i}`, slug: `r${i}` }));
+    const keywords = Array.from({ length: 5 }, (_, i) => ({ name: `키워드${i}`, slug: `k${i}` }));
+    const tenPhotos = Array.from({ length: 10 }, (_, i) => ({ name: `p${i}.jpg`, description: "" }));
+    const { prompts } = buildBulkPrompts({ regions, keywords, business, photos: tenPhotos });
+    expect(prompts.map((p) => p.count)).toEqual([50, 10]);
+    expect(prompts[0].text).toContain("한 사진은 15번까지");
+    expect(prompts[1].text).toContain("한 사진은 3번까지");
+  });
+
+  it("프롬프트 화면: 보관함 사진 수 안내, 비었을 때·못 불러왔을 때 안내", () => {
+    const withPhotos = text(renderToStaticMarkup(<PromptBuilderPanel libraryPhotos={photos} />));
+    expect(withPhotos).toContain("사진 보관함의 사진 3장(파일 이름·설명)이 프롬프트에 들어갑니다");
+    const none = text(
+      renderToStaticMarkup(<PromptBuilderPanel libraryPhotosError="사진 보관함 목록을 불러오지 못했습니다." />)
+    );
+    expect(none).toContain("사진 보관함에 사진이 없어 사진 칸은 비워 둡니다");
+    expect(none).toContain("사진 보관함 목록을 불러오지 못했습니다.");
+  });
+});
+
+describe("올리기 화면 공통 사진 설정", () => {
+  const settings = {
+    logoUrl: { name: "로고.png", url: libUrl(9) },
+    mainImageUrl: { name: "현장1.jpg", url: libUrl(1) },
+    image2Url: { name: "현장2.jpg", url: libUrl(2) },
+    image3Url: { name: "현장3.jpg", url: libUrl(3) },
+  };
+  const row = (rowNumber: number, values: Record<string, string> = {}) => ({
+    rowNumber,
+    values: { ...SAMPLE_VALUES, ...values },
+    warnings: [],
+  });
+
+  it("칸: 로고(로고 보관함)·대표 사진·현장 사진2·3", () => {
+    expect(COMMON_PHOTO_SLOTS.map((s) => [s.field, s.kind])).toEqual([
+      ["logoUrl", "logo"],
+      ["mainImageUrl", "photo"],
+      ["image2Url", "photo"],
+      ["image3Url", "photo"],
+    ]);
+  });
+
+  it("빈 칸에만 넣고(행 우선), 같은 행에 이미 있는 사진은 다시 넣지 않는다. 원래 행은 그대로", () => {
+    const rows = [
+      row(2),
+      row(3, { mainImageUrl: "다른.jpg", logoUrl: "https://img.example/logo.png" }),
+      row(4, { image2Url: "현장1.JPG" }),
+      row(5, { image3Url: libUrl(2) }),
+      row(6, { mainImageUrl: "a.jpg", image2Url: "b.jpg", image3Url: "c.jpg", logoUrl: "d.png" }),
+    ];
+    const snapshot = JSON.stringify(rows);
+    const { rows: applied, filledRows } = applyCommonPhotos(rows, settings);
+    expect(JSON.stringify(rows)).toBe(snapshot);
+    expect(filledRows).toBe(4);
+    const pick = (i: number) => {
+      const v = applied[i].values;
+      return [v.logoUrl, v.mainImageUrl, v.image2Url, v.image3Url];
+    };
+    expect(pick(0)).toEqual(["로고.png", "현장1.jpg", "현장2.jpg", "현장3.jpg"]);
+    expect(pick(1)).toEqual(["https://img.example/logo.png", "다른.jpg", "현장2.jpg", "현장3.jpg"]);
+    // 사진2에 이미 현장1(대소문자 달라도 같은 이름) → 사진1에는 넣지 않음
+    expect(pick(2)).toEqual(["로고.png", undefined, "현장1.JPG", "현장3.jpg"]);
+    // 사진3에 현장2 주소 → 사진2에는 넣지 않음
+    expect(pick(3)).toEqual(["로고.png", "현장1.jpg", undefined, libUrl(2)]);
+    expect(applied[4]).toBe(rows[4]);
+    expect(applyCommonPhotos(rows, {})).toEqual({ rows, filledRows: 0 });
+  });
+
+  it("넣은 뒤 검사: 이름이 주소로, 설명 칸은 보관함 설명, 로고까지", () => {
+    const library = [
+      { name: "로고.png", url: libUrl(9) },
+      { name: "현장1.jpg", url: libUrl(1), description: "정화조 작업 현장" },
+      { name: "현장2.jpg", url: libUrl(2), description: "배관 내시경" },
+      { name: "현장3.jpg", url: libUrl(3) },
+    ];
+    const { rows } = applyCommonPhotos([row(2, { image2Alt: "직접 쓴 설명" })], settings);
+    const checked = checkBulkUploadRows(rows, checkCtx(library)).rows[0];
+    expect(checked.errors).toEqual([]);
+    expect(checked.queueRow).toMatchObject({
+      logo_url: libUrl(9),
+      main_image_url: libUrl(1),
+      main_image_alt: "정화조 작업 현장",
+      image_2_url: libUrl(2),
+      image_2_alt: "직접 쓴 설명",
+      image_3_url: libUrl(3),
+      image_3_alt: null,
+    });
+    // 그 사이 보관함에서 지운 사진이면 검사 오류로 알린다
+    const gone = checkBulkUploadRows(rows, checkCtx(library.slice(0, 1))).rows[0];
+    expect(gone.errors.map((e) => e.code)).toEqual(["photo_not_found", "photo_not_found", "photo_not_found"]);
+  });
+
+  it("기억한 값 읽기: 형식이 틀리거나 모르는 칸은 버린다", () => {
+    expect(parseCommonPhotoSettings(null)).toEqual({});
+    expect(parseCommonPhotoSettings("{not json")).toEqual({});
+    expect(parseCommonPhotoSettings("[1,2]")).toEqual({});
+    expect(
+      parseCommonPhotoSettings(
+        JSON.stringify({
+          logoUrl: { name: "로고.png", url: libUrl(9), extra: 1 },
+          mainImageUrl: { name: "", url: libUrl(1) },
+          image2Url: { name: "a.jpg" },
+          image3Url: "현장3.jpg",
+          caseStudy: { name: "x", url: "y" },
+        })
+      )
+    ).toEqual({ logoUrl: { name: "로고.png", url: libUrl(9) } });
+  });
+
+  it("화면: 칸 4개, 고른 칸은 이름·바꾸기·비우기", () => {
+    const html = renderToStaticMarkup(
+      <CommonPhotoSettingsCard settings={{ mainImageUrl: settings.mainImageUrl }} onChange={() => undefined} />
+    );
+    const plain = text(html);
+    for (const label of ["로고", "대표 사진(사진1)", "현장 사진(사진2)", "현장 사진(사진3)"]) expect(plain).toContain(label);
+    expect(plain).toContain("현장1.jpg");
+    expect(html.match(/보관함에서 고르기/g)).toHaveLength(3);
+    expect(html.match(/>바꾸기</g)).toHaveLength(1);
+    expect(html.match(/>비우기</g)).toHaveLength(1);
+    expect(plain).toContain("사진 칸이 빈 행에만");
+  });
+});
+
+describe("보관함 화면: 설명 칸", () => {
+  it("사진마다 설명 입력칸(현재 값), 썸네일 alt는 설명, 올리기에도 설명 칸", () => {
+    const asset = {
+      id: "00000001-0000-4000-8000-000000000000",
+      sha256: sha(1),
+      kind: "photo" as const,
+      name: "a.jpg",
+      description: "배관 내시경",
+      storage_path: `library/${sha(1)}.webp`,
+      url: libUrl(1),
+      og_storage_path: `library/${sha(1)}-og.jpg`,
+      og_url: ogUrl(1),
+      mime: "image/webp" as const,
+      width: 1600,
+      height: 1200,
+      bytes: 300_000,
+      og_bytes: 150_000,
+      created_at: "2026-10-26T00:00:00.000Z",
+    };
+    const html = renderToStaticMarkup(
+      <MediaLibraryPanel items={[asset]} usedCounts={{}} usageError={null} search="" kind="all" />
+    );
+    expect(html).toMatch(/aria-label="a\.jpg 설명"[^>]*value="배관 내시경"|value="배관 내시경"[^>]*aria-label="a\.jpg 설명"/);
+    expect(html).toContain('alt="배관 내시경"');
+    const upload = renderToStaticMarkup(<MediaUploadInput kind="photo" multiple onUploaded={() => undefined} />);
+    expect(upload).toContain('id="media-upload-description"');
+    expect(text(upload)).toContain("사진 설명(alt)으로도 쓰임");
   });
 });
