@@ -1077,3 +1077,12 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 확인: 옛 주소 10개 모두 301 + Location 새 주소(쿼리 유지, HEAD·Yeti UA 동일), 새 주소 200·`index, follow`·자기 canonical, sitemap 873 → 863(옛 주소 10개만 빠지고 나머지 lastmod 그대로), llms.txt·허브·관련 링크에서 옛 주소 0(정왕동 정화조 페이지의 옛 주소 링크 사라짐), 이동 10행 모두 새 주소 공개·noindex 아님·연쇄 없음
 - 되돌리기: `rollback.sql`(이 10건만 삭제)
 - 남은 것: 2차(나머지 168건 + noindex 32개)는 사용자 승인 후 → 그 다음 IndexNow로 sitemap 알리기
+
+### 이동 넣기 2차 168건 + noindex 32개 ✅ (2026-10-30, 사용자 승인)
+
+- 백업 `C:\Users\user\Documents\onecare-backup\2026-10-30_redirects-batch2\`(before.json: 이동 10행·관련 페이지 상태·32개의 SEO 행 0개 / batch.tsv·noindex.tsv·insert.sql·rollback.sql·sitemap 전후·확인 결과)
+- 사전 점검: 옛 주소 168·새 주소 168·noindex 32 모두 공개+noindex 아님, 기존 이동과 겹침 0, 연쇄 0, noindex 32개 최근 7일 방문 0
+- 한 트랜잭션(개수 다르면 실패하게): 이동 168행 + SEO 설정 32행(seo_noindex=true만) → 이동 178행, noindex 393개. landing_pages는 손대지 않음
+- 확인: sitemap 863 → **663**(빠진 200개는 옛 주소 168 + noindex 32뿐, 나머지 lastmod 그대로, 허브 3개 유지), 옛 주소 178개 전부 301 + Location 새 주소(쿼리 유지, Yeti UA 동일), 새 주소 111개 200·`index, follow`·자기 canonical, noindex 32개 200·`noindex, follow`, 새 페이지·허브·홈·llms.txt에 옛 주소/noindex 링크 0, 이동 178행 모두 문제 없음
+- IndexNow(네이버) sitemap 주소 1개 알림 HTTP 200
+- 되돌리기: 2차만 `rollback.sql`(1차 10건은 남음)
