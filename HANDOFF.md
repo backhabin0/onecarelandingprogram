@@ -1068,3 +1068,12 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 이동 목록이 비어 있어 실제 301은 아직 확인 못 함 → 첫 이동을 넣는 운영 작업 때 옛 주소 301·Location·sitemap 빠짐을 확인할 것
 - 로그인한 관리자 화면 "주소 이동"은 계정이 없어 Claude가 열어보지 않음 → 사용자 확인(빈 목록 "이동 목록이 비어 있습니다." 보이면 정상)
 - 되돌리기: Vercel에서 `a9d20a4` 배포로 promote. 020은 추가만이라 이전 코드와 함께 동작(DB까지 되돌릴 때만 `supabase/rollback/020_down.sql`)
+
+### 이동 넣기 1차 10건 ✅ (2026-10-30, 사용자 승인)
+
+- 대표 다시 고르기 규칙(사용자 결정): 묶음 안에 noindex 아니고 방문 기록 있는 페이지가 있으면 그걸 대표로, 없으면 묶음 전체 noindex(이동 안 넣음) → noindex된 대표 26묶음은 전부 "전체 noindex"(남은 32개 모두 방문·클릭 0). A·B 반대 방향 4쌍은 원본을 대표로, A·D 겹친 10묶음은 하나로 합침(의미 없는 주소가 대표인 `fhghhdgh12`·`zcxv11`은 클릭이 있어 그대로 두기로 함)
+- 전체 계획: 이동 178건(A 5 · B 5 · A+D 30 · D 138) + 추가 noindex 32개 → sitemap 873 → 663 예상
+- 1차 10건(B 2·A 2·A+D 2·D 4): 백업 `C:\Users\user\Documents\onecare-backup\2026-10-30_redirects-batch1\`(before.json·batch.tsv·insert.sql·rollback.sql·sitemap 전후·확인 결과)
+- 확인: 옛 주소 10개 모두 301 + Location 새 주소(쿼리 유지, HEAD·Yeti UA 동일), 새 주소 200·`index, follow`·자기 canonical, sitemap 873 → 863(옛 주소 10개만 빠지고 나머지 lastmod 그대로), llms.txt·허브·관련 링크에서 옛 주소 0(정왕동 정화조 페이지의 옛 주소 링크 사라짐), 이동 10행 모두 새 주소 공개·noindex 아님·연쇄 없음
+- 되돌리기: `rollback.sql`(이 10건만 삭제)
+- 남은 것: 2차(나머지 168건 + noindex 32개)는 사용자 승인 후 → 그 다음 IndexNow로 sitemap 알리기
