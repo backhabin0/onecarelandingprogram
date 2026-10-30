@@ -1053,3 +1053,18 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 관리자가 나중에 옛 주소와 같은 slug로 새 페이지를 만들면 이동이 먼저 적용되어 새 페이지가 안 보임(관리자 화면 "옛 페이지 공개"로만 보임). 필요하면 slug 검사에 이동 목록 추가
 - 대표(새 주소) 페이지의 slug를 바꾸면 이동이 깨짐 → 관리자 화면에 "새 주소에 페이지가 없음"으로 표시
 - 백업 파일(version 4)에 이동 목록은 들어가지 않음
+
+### 운영 배포 ✅ (2026-10-30, 사용자 "머지해" + 020 적용 권한 승인)
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | 운영 DB 백업(SELECT만) | `C:\Users\user\Documents\onecare-backup\2026-10-30_redirects-deploy\` — 15개 테이블 전부 받기 전 = 받은 뒤 = 저장 행 수 = 고유 키(landing_pages 1,230, seo 549, queue 183, faqs 561, events 663, 수집 체크 113 등) + `schema.json`(칸 150·제약 97·인덱스 35·트리거 4·함수 7·정책 39) + Storage 36개(46,212,870 B) |
+| 2 | 020 사전 점검 | 테이블·함수 없음, `landing_pages.slug` unique 있음, main = `a9d20a4` |
+| 2 | migration 020 | `apply-020.sql`(`begin;` + 커밋 `eb3e66c`의 020 + `commit;`) ✅. RLS 켜짐, 정책 1개(anon·authenticated SELECT), 트리거 `landing_page_redirects_check`, 제약 5개, 0행. anon 읽기 됨·추가는 권한 오류(롤백 트랜잭션, 남은 행 0). 기존 행 수 그대로, 사이트 200 |
+| 3 | 배포 전 운영 | `a9d20a4`(사진 기능 배포) ← 되돌리기용 |
+| 3 | 머지 | [PR #3](https://github.com/backhabin0/onecarelandingprogram/pull/3) merge commit **`fabc34f`** → GitHub deployment 7429595808 Production **success**(`onecarelandingprogram-3d83rzhwd-habin-s-projects.vercel.app`) |
+| 4 | 배포 후 확인(GET) | `/`·랜딩 2개·`/llms.txt`·`/robots.txt`·`/login` 200, `/admin`·`/admin/redirects` 307 → `/login`, 없는 주소 404, 허브 3개(bucheon·dangjin·gunpo) 200, sitemap 873개(변화 없음), noindex 페이지 `noindex, follow` 그대로. 설명 맨 앞 `#` 사라짐(`siheung-jeongwangdong-window-cleaning-0004` "정왕동유리창청소, …", `suwon-gwonseondong-septic-blockage-06-0001` meta·JSON-LD 모두 "권선동정화조막힘, …") |
+
+- 이동 목록이 비어 있어 실제 301은 아직 확인 못 함 → 첫 이동을 넣는 운영 작업 때 옛 주소 301·Location·sitemap 빠짐을 확인할 것
+- 로그인한 관리자 화면 "주소 이동"은 계정이 없어 Claude가 열어보지 않음 → 사용자 확인(빈 목록 "이동 목록이 비어 있습니다." 보이면 정상)
+- 되돌리기: Vercel에서 `a9d20a4` 배포로 promote. 020은 추가만이라 이전 코드와 함께 동작(DB까지 되돌릴 때만 `supabase/rollback/020_down.sql`)
