@@ -3,6 +3,7 @@ import type { LandingPageSeoSettings } from "@/types/seo";
 import { buildSeoTitle, buildSeoDescription } from "@/lib/seo-auto";
 import { getAbsoluteUrl } from "@/lib/site";
 import { resolveAutoOgImage, type SitePhotoInfo } from "@/lib/landing-photos";
+import { stripHashMarks } from "@/lib/business-info";
 
 /**
  * public 랜딩페이지 1건에 대해 실제로 적용될 SEO/AEO/GEO 값을 계산한 결과.
@@ -41,9 +42,10 @@ export function resolveLandingPageSeo(
   const autoDescription = buildSeoDescription(landingPage);
 
   const manualTitle = manualOrUndefined(seoSettings?.seo_title);
-  const manualDescription = manualOrUndefined(seoSettings?.seo_description);
+  // 직접 입력한 설명도 "#"는 뺀다(검색결과·구조화 데이터에 마크다운 기호가 보이지 않게)
+  const manualDescription = manualOrUndefined(stripHashMarks(seoSettings?.seo_description));
   const manualOgTitle = manualOrUndefined(seoSettings?.og_title);
-  const manualOgDescription = manualOrUndefined(seoSettings?.og_description);
+  const manualOgDescription = manualOrUndefined(stripHashMarks(seoSettings?.og_description));
   const manualOgImage = manualOrUndefined(seoSettings?.og_image_url);
 
   const title = manualTitle ?? autoTitle;

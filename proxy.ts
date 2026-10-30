@@ -1,7 +1,11 @@
 import { updateSession } from "@/lib/supabase/proxy";
+import { redirectLandingPage } from "@/lib/supabase/redirect-proxy";
 import type { NextRequest } from "next/server";
 
 export async function proxy(request: NextRequest) {
+  // 합쳐진 옛 랜딩페이지 주소는 렌더링 전에 새 주소로 301 이동(migration 020)
+  const redirect = await redirectLandingPage(request);
+  if (redirect) return redirect;
   return await updateSession(request);
 }
 

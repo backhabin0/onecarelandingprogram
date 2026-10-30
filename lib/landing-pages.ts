@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
+import { getRedirectedSlugs } from "@/lib/redirects";
 import { ilikeAnyFilter, sanitizeSearchTerm } from "@/lib/search-term";
 import { removeLandingPageImageByUrl } from "@/lib/storage/landing-page-assets";
 import { getSeoSettingsByLandingPageId } from "@/lib/seo-settings";
@@ -765,9 +766,12 @@ export async function getPublicLandingPagesForSitemap(): Promise<GetPublicLandin
       return { data: [], error: "랜딩페이지 목록을 불러오지 못했습니다." };
     }
 
+    // 020: 다른 주소로 이동된 옛 페이지도 뺀다(sitemap·홈·llms.txt가 이 목록을 쓴다)
+    const redirected = await getRedirectedSlugs();
+
     return {
       data: rows
-        .filter((row) => row.seo_settings?.seo_noindex !== true)
+        .filter((row) => row.seo_settings?.seo_noindex !== true && !redirected.has(row.slug))
         .map(({ slug, title, updated_at, created_at, published_at, region, keyword, city, city_slug }) => ({
           slug,
           title,

@@ -4,7 +4,7 @@ import type { ResolvedLandingPageSeo } from "@/lib/seo-resolver";
 import type { SiteProfile } from "@/lib/site-profile";
 import { getAbsoluteUrl, getSiteUrl } from "@/lib/site";
 import type { BreadcrumbItem } from "@/lib/local-seo";
-import { areaName, looksLikePostalAddress } from "@/lib/business-info";
+import { areaName, looksLikePostalAddress, stripHashMarks } from "@/lib/business-info";
 import { getLandingPhotos, isSiteBusinessPage, resolvePageLogoUrl } from "@/lib/landing-photos";
 
 const SCHEMA_CONTEXT = "https://schema.org";
@@ -91,7 +91,7 @@ export function buildOrganizationJsonLd(
     ...(sameAsSite ? { "@id": siteBusinessId() } : {}),
     name: sameAsSite ? site.businessName : landingPage.business_name,
     url: sameAsSite ? getAbsoluteUrl("/") : resolvedSeo.canonical,
-    description: (sameAsSite ? site.description : null) ?? resolvedSeo.description,
+    description: (sameAsSite ? stripHashMarks(site.description) || null : null) ?? resolvedSeo.description,
     ...(telephone ? { telephone } : {}),
     ...(address
       ? {
@@ -137,7 +137,7 @@ export function buildSiteBusinessJsonLd(site: SiteBusiness, cities: readonly str
     "@id": siteBusinessId(),
     name: site.businessName,
     url: getAbsoluteUrl("/"),
-    ...(site.description ? { description: site.description } : {}),
+    ...(stripHashMarks(site.description) ? { description: stripHashMarks(site.description) } : {}),
     ...(site.phone ? { telephone: site.phone } : {}),
     ...(site.logoUrl ? { logo: site.logoUrl } : {}),
     ...(cities.length > 0

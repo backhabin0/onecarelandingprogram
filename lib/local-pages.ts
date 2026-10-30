@@ -4,6 +4,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import { getAbsoluteUrl } from "@/lib/site";
 import { kstDayRange } from "@/lib/kst-date";
+import { getRedirectedSlugs } from "@/lib/redirects";
 import {
   buildAreaHubs,
   selectRelatedLinks,
@@ -32,7 +33,8 @@ interface CandidateRow {
 
 const CANDIDATE_SELECT = "slug, title, business_name, region, keyword, city, city_slug, seo:landing_page_seo_settings(seo_noindex)";
 
-const toCandidate = (row: CandidateRow): RelatedCandidate => ({
+// 020: 다른 주소로 이동된 옛 페이지는 noindex처럼 링크에서 뺀다
+const toCandidate = (row: CandidateRow, redirected: ReadonlySet<string>): RelatedCandidate => ({
   slug: row.slug,
   title: row.title,
   business_name: row.business_name,
@@ -40,7 +42,7 @@ const toCandidate = (row: CandidateRow): RelatedCandidate => ({
   keyword: row.keyword,
   city: row.city,
   city_slug: row.city_slug,
-  noindex: row.seo?.seo_noindex === true,
+  noindex: row.seo?.seo_noindex === true || redirected.has(row.slug),
 });
 
 const EMPTY_LINKS: RelatedLinks = { sameRegion: [], nearby: [], hub: null };
@@ -62,7 +64,7 @@ export async function getRelatedLinks(page: LocalPageInfo): Promise<RelatedLinks
       .eq("region", region);
     sameRegionQuery = citySlug ? sameRegionQuery.eq("city_slug", citySlug) : sameRegionQuery.is("city_slug", null);
 
-    const [sameRegion, sameCity] = await Promise.all([
+    const [sameRegion, sameCity, redirected] = await Promise.all([
       sameRegionQuery.order("slug", { ascending: true }).range(0, 199),
       citySlug
         ? fetchAllRows<CandidateRow>((from, to) =>
@@ -76,6 +78,7 @@ export async function getRelatedLinks(page: LocalPageInfo): Promise<RelatedLinks
               .range(from, to)
           )
         : Promise.resolve({ data: [] as CandidateRow[], error: null }),
+      getRedirectedSlugs(),
     ]);
 
     if (sameRegion.error || sameCity.error) {
@@ -83,7 +86,9 @@ export async function getRelatedLinks(page: LocalPageInfo): Promise<RelatedLinks
       return EMPTY_LINKS;
     }
 
-    const candidates = [...((sameRegion.data as unknown as CandidateRow[]) ?? []), ...sameCity.data].map(toCandidate);
+    const candidates = [...((sameRegion.data as unknown as CandidateRow[]) ?? []), ...sameCity.data].map((row) =>
+      toCandidate(row, redirected)
+    );
     return selectRelatedLinks(page, candidates);
   } catch (err) {
     console.error("[local-pages] client error:", err instanceof Error ? err.message : err);
@@ -105,7 +110,7 @@ interface HubRow {
   seo: { seo_noindex: boolean } | null;
 }
 
-const toHubEntry = (row: HubRow): HubPageEntry => ({
+const toHubEntry = (row: HubRow, redirected: ReadonlySet<string>): HubPageEntry => ({
   slug: row.slug,
   title: row.title,
   region: row.region,
@@ -115,7 +120,7 @@ const toHubEntry = (row: HubRow): HubPageEntry => ({
   updated_at: row.updated_at,
   published_at: row.published_at,
   created_at: row.created_at,
-  noindex: row.seo?.seo_noindex === true,
+  noindex: row.seo?.seo_noindex === true || redirected.has(row.slug),
 });
 
 /** 지역 모음 페이지(/area/{citySlug}) 데이터. 공개+noindex 아닌 페이지가 없으면 null */
@@ -139,8 +144,9 @@ export async function getAreaHub(
       console.error("[local-pages] hub select error:", error);
       return { hub: null, businessNames: [], error: "지역 모음 페이지를 불러오지 못했습니다." };
     }
-    const [hub] = buildAreaHubs(data.map(toHubEntry));
-    const indexable = data.filter((row) => row.seo?.seo_noindex !== true);
+    const redirected = await getRedirectedSlugs();
+    const [hub] = buildAreaHubs(data.map((row) => toHubEntry(row, redirected)));
+    const indexable = data.filter((row) => row.seo?.seo_noindex !== true && !redirected.has(row.slug));
     return {
       hub: hub ?? null,
       businessNames: Array.from(new Set(indexable.map((row) => row.business_name.trim()))),

@@ -19,6 +19,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "통계", href: "/admin/analytics" },
   { label: "템플릿 관리", href: "/admin/templates" },
   { label: "사진 보관함", href: "/admin/media" },
+  { label: "주소 이동", href: "/admin/redirects" },
   { label: "설정", href: "/admin/settings" },
 ];
 

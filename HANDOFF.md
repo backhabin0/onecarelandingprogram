@@ -1,6 +1,6 @@
 # HANDOFF — feature/bulk-publish
 
-마지막 업데이트: 2026-10-27 (feature/photos: 최신 main 합침 + 사진 설명·대기열 로고·AI 프롬프트 사진 목록·공통 사진 설정, 019 운영 미적용·미배포)
+마지막 업데이트: 2026-10-27 (feature/photos 운영 배포 완료: migration 019 적용·main `a9d20a4`)
 
 ## 배경
 
@@ -957,6 +957,42 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 
 배포할 때 순서는 위와 같다(백업 → **019 먼저 적용** → 머지). 019 내용이 늘었으니 적용 전에 파일을 다시 볼 것.
 
+### 운영 배포 ✅ (2026-10-27, 사용자 단계별 승인)
+
+| 순서 | 작업 | 결과 |
+| --- | --- | --- |
+| 1 | 운영 DB 백업(SELECT만) | `C:\Users\user\Documents\onecare-backup\2026-10-27_photos-deploy\` — 13개 테이블 전부 받기 전 = 받은 뒤 = 저장 행 수 = 고유 기본키(landing_pages 1,157, events 628, faqs 342, queue 135, seo 116, indexnow 110·3, 상담 7, publish_runs 3, 수집 체크 1, 설정 3개 각 1) + `schema.json`(칸 125·제약 69·인덱스 28·트리거 4·함수 7·정책 35·확장 6·버킷 1·cron 1) + Storage 24개 파일(44,335,299 B, 크기 일치). 스크립트 `scripts\backup.mjs`(지난번과 같음) |
+| 2 | 019 사전 점검(`scripts\precheck-019.mjs`) | 019 미적용 확인, 역할·`auth.uid()`·`gen_random_uuid()` 있음(PG 17.6), **운영 공개 함수 = 016 본문과 글자 단위로 같음**(덮어써도 잃는 것 없음), 실행 권한 authenticated만, Storage 정책 005 그대로, 파일 24개 모두 `landing-pages/`(2MB 넘는 기존 파일 10개 — 상한은 새로 올리는 파일만), cron 09:00 KST(그날 실행 끝난 뒤 적용) |
+| 2 | migration 019 | `apply-019.sql`(`begin;` + 커밋 `29ac003`의 019 + `commit;`) 실행 ✅ exit 0. 확인(`scripts\verify-019.mjs`): media_assets(RLS·정책 4·설명 칸)·페이지/대기열 새 칸·대기열 로고·대표 로고·버킷 2MB·업로드 경로 제한·공개 함수 로고 복사·권한 그대로. anon은 media_assets 0행·추가는 RLS 위반(42501)으로 막힘(롤백 트랜잭션, 남은 행 0). 기존 13개 테이블 행 수 백업과 같음. 사이트(이전 코드) 정상 |
+| 3 | 배포 전 운영 | `38ec710` = GitHub deployment 7348683148 (`onecarelandingprogram-7bhgpgl2u-habin-s-projects.vercel.app`, list-copy-check 배포) ← 되돌리기용. dpl_ ID는 Vercel 로그인이 없어 못 읽음 |
+| 3 | 머지 | 사용자 승인 → main이 `38ec710` 그대로인지 확인 → 로컬 `--no-ff` merge commit **`a9d20a4`**, 병합 결과 `npm test` 654개 통과 → push(PR 없음) → 자동 배포 GitHub deployment 7349262755 **success**(`onecarelandingprogram-2qkloz6zc-habin-s-projects.vercel.app`, 10-27 12:06 KST) |
+| 4 | 배포 후 확인(GET·읽기만) | 아래 표 — 모두 정상 |
+
+| 확인 | 결과 |
+| --- | --- |
+| `/`, `/dangjin12`, `/zxcasd1` | 200, H1 1개, JSON-LD 8개, 오류 화면 없음(배포 전과 같음) |
+| 랜딩 `/osan-segyo-drain-unblocking-20261018-0040`(사진1+로고) | 200, H1 1, `<img>` 2개 모두 alt·200, og:image = 사진1(예전 `landing-pages/` 파일, 200 image/png), JSON-LD 4블록 유효(WebPage·LocalBusiness·FAQPage·BreadcrumbList), LocalBusiness `image` 배열(1), `logo` 있음 |
+| 랜딩 `/qwertt12`(사진1만) | 200, `<img>` 1개 alt·200, og:image 사진1, `image` 배열(1), logo 없음(업체명은 대표 업체와 같지만 대표 로고가 아직 비어 있음) |
+| 랜딩 `/siheung-maehwa-dong-septic-unblocking`(사진 없음) | 200, `<img>` 0, og:image 없음, `image` 없음, JSON-LD 유효 |
+| 사진 갤러리 | 세 페이지 모두 사진2·3이 없어 갤러리 없음(정상) |
+| sitemap.xml·robots.txt·llms.txt | 200, sitemap 1,161개·중복 0 |
+| `/login` / `/admin`·`/admin/pages`·`/admin/media`·`/admin/bulk`·`/admin/queue` | 200 / 307 → `/login` |
+
+- 기존 페이지 사진(예전 `landing-pages/` 24개 파일)은 그대로 보이고, og:image도 예전처럼 사진1 원본(1200×630 JPEG는 보관함 사진부터)
+- 로그인한 관리자 화면(보관함 올리기·압축·설명·고르기·공통 사진·프롬프트)은 계정이 없어 Claude가 열어보지 않음 → 사용자 확인(아래 순서)
+- 되돌리기: Vercel에서 GitHub deployment 7348683148(`onecarelandingprogram-7bhgpgl2u-…`)로 promote. 019는 추가만이라 이전 코드와 함께 동작(이전 코드의 이미지 올리기는 압축 없이 2MB 상한에 걸림). DB까지 되돌릴 때만 `supabase/rollback/019_down.sql`(보관함 목록·사진2·3·로고 칸 값이 지워짐 — 이번 백업으로 복구 가능)
+- 이 기록 커밋은 `feature/photos`에만 둠(main에 올리면 문서만으로 운영 재배포가 생김)
+
+### 사용자 화면 확인 순서(배포 후)
+
+1. 사진 보관함(`/admin/media`): 사진 2~3장(JPG, 2MB 넘는 것 1장 포함) 한꺼번에 + 설명 → 줄마다 "올림", 크기 2MB 이하·1600px, 설명 보임. 같은 사진 다시 → "이미 있는 사진". HEIC → 안내 문구. 로고(PNG 투명) → 512px·투명 유지
+2. 설명 고치기·검색(설명 낱말로)
+3. 페이지 수정: 사진1~3·로고 "보관함에서 고르기" → 설명 칸 자동 → "사진 저장" → 공개 페이지 갤러리·공유 미리보기(og 1200×630)
+4. 쓰는 사진 삭제 → 막힘 문구, 안 쓰는 사진 삭제 → 됨
+5. 설정 > 대표 업체 로고 → 업체명이 같은 페이지 헤더에 로고
+6. AI 대량 생성 > 프롬프트 만들기 → "사진 N장이 들어갑니다", 프롬프트에 목록·규칙 9
+7. 올리기: 공통 사진 4칸 고르기 → 사진 칸 빈 엑셀/붙여넣기 검사 → "공통 사진을 n행에 넣어" 안내·오류 없음 → 새로고침해도 선택 기억 → 대기열 넣기 → 대기열 항목에 사진·로고 주소
+
 ## 랜딩페이지 목록 URL 복사완료 체크 — `feature/list-copy-check` (2026-10-27, migration 없음·운영 DB 접속 없음·배포 안 함)
 
 - 목록 줄마다 [URL 복사] 오른쪽에 [☐ 복사완료](공개 페이지만, 왼쪽 업체명 선택 체크칸과 별개). 복사하면 자동 체크 + "복사됨", 직접 체크·해제 가능, 저장 실패 시 되돌리고 안내
@@ -966,3 +1002,54 @@ slug는 소문자로 바꾼 뒤 `^[a-z0-9]+(-[a-z0-9]+)*$` + 예약어(`lib/slug
 - 체크 상태를 못 읽으면 숫자 대신 안내, 체크칸 숨김(목록·URL 복사는 그대로)
 - 테스트: `tests/list-copy-check.db.test.tsx`(PGlite). PGlite 어댑터에 관계 조인(`table(cols)`·`!inner`·`is(table, null)`) 지원 추가
 - ⚠ 관계 조인 문법은 실제 PostgREST(운영)에서는 아직 확인 안 함 — 이 PC에 `.env.local`이 없어 읽기 확인도 못 함. 배포 뒤 `/admin/pages?copy=done`·`?copy=todo` 화면을 한 번 열어 확인할 것
+
+## 2026-10-30 네이버 노출 감소 점검 후 운영 작업 (사용자 승인)
+
+배경: 10/24부터 네이버 노출 감소. 점검 결과 원인 후보 1순위는 대량·유사 페이지(완전 동일 본문 쌍, 의미 없는 주소 663개, 같은 동네·서비스 중복). 제목은 지금 그대로 두기로 함(사용자 결정).
+
+| 작업 | 결과 | 백업·되돌리기 |
+| --- | --- | --- |
+| 매일 자동 공개 끄기 | `auto_publish_settings.enabled` true → false(1행, 다른 칸 그대로). pg_cron 작업은 그대로 — 꺼져 있으면 `{"status":"disabled"}`만 돌려줌(함수 본문 확인). 대기열은 183개 모두 공개된 상태였음 | `C:\Users\user\Documents\onecare-backup\2026-10-30_auto-publish-off\`(`before.json`·`update.sql`·`rollback.sql`) |
+| C 분류 361개 noindex | 의미 없는 주소(`zxcvv12` 등) 중 사이트 방문·클릭 기록 0(전체 기간·최근 7일 모두 0, 처리 직전 재확인)이고 A·B·D(301 대상)에 안 걸린 것. 정왕동 유리창 0002/0004 제외. SEO 설정 행 360개 새로 만듦(`seo_noindex`=true, 나머지 기본값) + 기존 1행(`siheungsingcdae`) noindex만 true. landing_pages는 건드리지 않음(최신 updated_at 그대로) | `C:\Users\user\Documents\onecare-backup\2026-10-30_noindex-c361\`(`before.json`·`targets.csv`·`update.sql`·`rollback.sql`·`sitemap-before/after.xml`) |
+| 확인 | 샘플 5개(`onecareplumb12`·`zaqw12`·`wiugal1`·`rsetzeryzey5`·`siheungsingcdae`) 200 + `<meta name="robots" content="noindex, follow">`(X-Robots-Tag 헤더 없음). sitemap 1,234 → **873**(361개 빠짐, 대상 0개 남음), 남은 주소 lastmod 변경 0 | |
+| IndexNow | sitemap 주소 1개(`https://onecarepage.co.kr/sitemap.xml`)만 네이버 엔드포인트로 POST → HTTP 200. 앱의 IndexNow 기록 테이블에는 남기지 않음(DB 변경 범위 밖) | `…\2026-10-30_noindex-c361\indexnow-status.txt` |
+
+- "방문·클릭"은 사이트 자체 기록(`landing_page_events`)이지 네이버 노출 수치가 아님
+- noindex 361개 중 26개는 정리 목록에서 301의 **대표(남길 페이지)**로 잡혀 있던 것(A 5묶음, D 21묶음 — 의미 없는 주소끼리 묶인 곳). 301 작업 전에 대표를 다시 고르거나 묶음 전체를 noindex로 둘 것
+- 정리 목록(A 본문 동일 25, B -copy, D 같은 동네·서비스 186)은 아직 처리 안 함 → 아래 301 기능 배포 후
+
+## 301 이동 기능 + 설명의 "#" 제거 — `feature/redirects` (2026-10-30, migration 020 미적용·배포 안 함)
+
+`main`(a9d20a4)에서 새 브랜치. HANDOFF.md는 `feature/photos`의 최신본을 가져옴.
+
+### 1. 301 이동(옛 주소 → 새 주소)
+
+- migration **020** `landing_page_redirects`(`from_slug` PK, `to_slug`, `note` 200자, `created_at`). slug 형식·자기 자신 금지 check. 트리거: 새 주소가 이미 이동된 옛 주소면 거절, 옛 주소가 다른 항목의 새 주소면 거절(→ 연쇄·순환 불가), 새 주소에 공개 페이지가 없으면 거절, 동시에 넣어 피하지 못하게 테이블 잠금. landing_pages에 외래 키 없음(옛 페이지를 지워도 이동 유지). RLS: anon·authenticated **읽기만**(쓰기는 SQL — 운영 작업 승인 후). 되돌리기 `supabase/rollback/020_down.sql`
+- `proxy.ts`: `/한단어` slug 경로의 GET·HEAD만 목록을 보고 **301**(쿼리 유지). 예약 주소(admin·login·api·area 등)·하위 경로·파일은 건너뜀. 목록은 인스턴스에서 60초 기억(실패하면 10초 뒤 재시도). 목록을 못 읽으면(020 전·오류) 이동 없이 예전처럼 페이지 표시. `permanentRedirect`(308)가 아니라 `NextResponse.redirect(url, 301)` — 네이버 안내가 301 기준
+- 옛 주소는 sitemap·홈·llms.txt(`getPublicLandingPagesForSitemap`)·지역 모음·내부 링크(`lib/local-pages.ts`, noindex와 같은 취급)에서 빠짐. 이동 목록을 못 읽으면 예전처럼 다 나옴
+- 관리자 **"주소 이동"**(`/admin/redirects`): 목록 확인만(옛 주소·옛 페이지 상태·새 주소·새 페이지 상태·메모·등록일), "확인 필요" 표시(새 페이지가 비공개·없음·noindex·연쇄)
+- IndexNow 대기 함수(015)는 바꾸지 않음 — 옛 페이지는 이미 공개·전송된 페이지라 대상이 아님
+
+### 2. meta description·구조화 데이터의 "#"
+
+- `stripHashMarks`(`lib/business-info.ts`): 남은 `#`(`### 제목`, 낱개 `#`)와 앞뒤 공백을 빈칸 하나로. `toPlainSummary`(자동 설명)에 적용, 직접 입력한 SEO 설명·OG 설명(`seo-resolver`), 대표 업체 소개의 구조화 데이터(`structured-data`)에도 적용. 화면 본문은 그대로
+- 대상: 설명 맨 앞 `#` 24곳·중간 8곳(10-30 점검 목록)
+
+### 검증
+
+- `npm test` ✅ 26개 파일, **677개**(기존 654 + `tests/redirects.db.test.tsx` 23). PGlite 어댑터에 `별칭:table(cols)` 관계 조인 지원 추가(sitemap·허브 조회가 씀)
+- 일부러 망가뜨려 확인(확인 후 원복): sitemap 필터 제거 → 1개, 허브·내부 링크 필터 제거 → 2개, 반대 방향 연쇄 검사 제거 → 1개, `#` 제거 빼기 → 2개 실패
+- `npx tsc --noEmit` ✅ / `npx eslint .` ✅ / `npx next build` ✅(`/admin/redirects` 생김, 공개 경로 모두 ƒ 동적 그대로, "Dynamic server usage" 로그는 기존과 같음)
+- 실제 PostgREST·proxy 동작은 미리보기·운영에서 확인 필요(이 PC에 `.env.local` 없음)
+
+### 배포할 때(사용자 승인 후)
+
+1. 운영 DB 백업 → **020 적용**(`begin;`/`commit;`). 테이블·함수 추가만이라 지금 코드와 함께 동작
+2. 머지 → 자동 배포 → `/admin/redirects`(빈 목록) 확인, 아무 랜딩 200 확인
+3. 이동 넣기는 별도 운영 작업: 대표 다시 고르기(noindex된 대표 26묶음) → 목록·개수 보고 → 승인 → SQL 한 트랜잭션 → 옛 주소 301·sitemap 빠짐 확인
+
+### 남은 것
+
+- 관리자가 나중에 옛 주소와 같은 slug로 새 페이지를 만들면 이동이 먼저 적용되어 새 페이지가 안 보임(관리자 화면 "옛 페이지 공개"로만 보임). 필요하면 slug 검사에 이동 목록 추가
+- 대표(새 주소) 페이지의 slug를 바꾸면 이동이 깨짐 → 관리자 화면에 "새 주소에 페이지가 없음"으로 표시
+- 백업 파일(version 4)에 이동 목록은 들어가지 않음
