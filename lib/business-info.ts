@@ -79,8 +79,16 @@ export function withDirectionParticle(word: string): string {
  * 화면 본문은 바꾸지 않는다(입력한 그대로 보여 줌).
  */
 export function toPlainSummary(text: string | null | undefined): string {
+  return stripHashMarks(clean(text).replace(/(^|\s)#[^\s#]+/g, " "));
+}
+
+/**
+ * 남은 "#"(마크다운 제목 "### 제목", 낱개 "#")와 그 앞뒤 공백을 빈칸 하나로 바꾼다.
+ * meta description·구조화 데이터용(직접 입력한 SEO 설명에도 쓴다). 화면 본문은 그대로.
+ */
+export function stripHashMarks(text: string | null | undefined): string {
   return clean(text)
-    .replace(/(^|\s)#[^\s#]+/g, " ")
+    .replace(/\s*#+\s*/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

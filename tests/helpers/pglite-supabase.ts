@@ -5,7 +5,7 @@
  *   select(cols, { count, head }) / insert / update / delete
  *   eq / neq / in / ilike / not(col, "is", null) / or("a.ilike.x,b.ilike.y") / order / range / maybeSingle /
  *   쓰기 뒤 select(+ single)
- *   select 안의 관계 조인 "table(cols)" / "table!inner(cols)"(외래 키로 연결된 표, 한 단계만)와
+ *   select 안의 관계 조인 "table(cols)" / "table!inner(cols)" / "별칭:table(cols)"(외래 키로 연결된 표, 한 단계만)와
  *   is("table", null)(조인 대상이 없는 행만 — PostgREST anti join)
  * storage는 없다 — 필요한 테스트가 storage 속성에 가짜를 붙여 쓴다(tests/helpers/fake-storage.ts).
  *
@@ -71,12 +71,14 @@ function splitTopLevel(input: string): string[] {
 }
 
 interface Embed {
+  /** 결과에 쓰는 이름(별칭이 없으면 표 이름) */
+  name: string;
   table: string;
   inner: boolean;
   columns: string;
 }
 
-const EMBED = /^([a-z_][a-z0-9_]*)(!inner)?\((.*)\)$/;
+const EMBED = /^(?:([a-z_][a-z0-9_]*):)?([a-z_][a-z0-9_]*)(!inner)?\((.*)\)$/;
 
 /** 관계 조인: 조인 대상 표(child)의 외래 키 칼럼이 기준 표(parent)의 칼럼을 가리킨다 */
 interface EmbedLink {
@@ -174,7 +176,8 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
       this.embeds = [];
       for (const part of splitTopLevel(columns)) {
         const embed = part.match(EMBED);
-        if (embed) this.embeds.push({ table: embed[1], inner: Boolean(embed[2]), columns: embed[3] });
+        if (embed)
+          this.embeds.push({ name: embed[1] ?? embed[2], table: embed[2], inner: Boolean(embed[3]), columns: embed[4] });
         else plain.push(part);
       }
       this.columns = plain.join(", ") || "*";
@@ -236,7 +239,7 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
 
   is(column: string, value: null) {
     if (value !== null) throw new Error("[pglite-supabase] is()는 null만 지원");
-    if (this.embeds.some((embed) => embed.table === column)) {
+    if (this.embeds.some((embed) => embed.name === column)) {
       this.antiJoins.push(column);
       return this;
     }
@@ -381,11 +384,11 @@ class PgQueryBuilder implements PromiseLike<PgResponse> {
       const rowsSql = `select ${columnsSql(embed.columns)} from ${child} where ${joinOn}`;
       projections.push(
         link.one
-          ? `(select to_jsonb(e) from (${rowsSql} limit 1) e) as ${ident(embed.table)}`
-          : `coalesce((select jsonb_agg(to_jsonb(e)) from (${rowsSql}) e), '[]'::jsonb) as ${ident(embed.table)}`
+          ? `(select to_jsonb(e) from (${rowsSql} limit 1) e) as ${ident(embed.name)}`
+          : `coalesce((select jsonb_agg(to_jsonb(e)) from (${rowsSql}) e), '[]'::jsonb) as ${ident(embed.name)}`
       );
       if (embed.inner) embedWhere.push(`exists (select 1 from ${child} where ${joinOn})`);
-      if (this.antiJoins.includes(embed.table)) embedWhere.push(`not exists (select 1 from ${child} where ${joinOn})`);
+      if (this.antiJoins.includes(embed.name)) embedWhere.push(`not exists (select 1 from ${child} where ${joinOn})`);
     }
     for (const sql of embedWhere) this.where.push({ sql, params: [] });
 
